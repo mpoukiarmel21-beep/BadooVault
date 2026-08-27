@@ -147,7 +147,8 @@
 // Frame replacement in Badoo's own AVCaptureVideoDataOutput delegate callback.
 // ============================================================================
 
-static IVVideoFeeder *gFeeder = nil;                 // the active container's feeder
+static IVVideoFeeder *gFeeder = nil;                 // the global video feeder (data path)
+static NSURL *gVideoURL = nil;                        // the global video (feeder + preview overlay)
 static SEL gDidOutputSel;                            // captureOutput:didOutputSampleBuffer:fromConnection:
 static NSMutableSet<NSNumber *> *gSwizzledDelegates; // class pointers already hooked
 
@@ -220,7 +221,7 @@ static void IVSwizzleDelegateClass(Class cls) {
 // swizzle -[AVCaptureVideoDataOutput setSampleBufferDelegate:queue:] so we capture
 // whatever object Badoo installs and immediately hook ITS didOutputSampleBuffer.
 // Badoo only calls this on a user verification/capture action — always AFTER we
-// install at launch, so we never miss it. Idempotent (guarded in installForContainer).
+// install at launch, so we never miss it. Idempotent (guarded in installGlobal).
 static void IVInstallDelegateLearner(void) {
     Class outCls = objc_getClass("AVCaptureVideoDataOutput");
     if (!outCls) { IVErr(@"camera: AVCaptureVideoDataOutput unavailable"); return; }
@@ -243,33 +244,102 @@ static void IVInstallDelegateLearner(void) {
 }
 
 // ============================================================================
-@implementation IVCameraHook
+// Preview overlay — put the video ON SCREEN over Badoo's live preview so the user
+// SEES the virtual camera, not the real one. AVCaptureVideoPreviewLayer is driven
+// by the OS compositor straight from the hardware feed and can't be redirected, so
+// we lay an AVPlayerLayer (looping the same video, aspect-fill) directly on top.
+// ============================================================================
 
-+ (void)installForContainer:(IVContainer *)container {
-    if (!container) return;
+static const void *kIVOverlayLayerKey  = &kIVOverlayLayerKey;
+static const void *kIVOverlayPlayerKey = &kIVOverlayPlayerKey;
+static const void *kIVOverlayLooperKey = &kIVOverlayLooperKey;
 
-    // Resolve the video: prefer the explicit path recorded on the container, fall
-    // back to the canonical per-cid location. No readable file → nothing to feed,
-    // so we don't hook at all (the real camera passes through untouched).
-    NSString *path = container.cameraVideoPath.length ? container.cameraVideoPath
-                                                      : [IVPaths cameraVideoPathForCID:container.cid];
-    if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        IVLog(@"camera: no verification video for %@ — real camera untouched", container.cid);
-        return;
+// Attach (once) a looping AVPlayerLayer over `preview`, retained via associated
+// objects so it lives exactly as long as the preview layer. Sized to the preview's
+// bounds now; the layoutSublayers swizzle keeps it sized as the preview resizes.
+static void IVAttachOverlayToPreview(CALayer *preview) {
+    if (!preview || !gVideoURL) return;
+    if (objc_getAssociatedObject(preview, kIVOverlayLayerKey)) return;   // already attached
+    @try {
+        AVQueuePlayer *player = [AVQueuePlayer queuePlayerWithItems:@[]];
+        player.muted = YES;
+        AVPlayerItem *item = [AVPlayerItem playerItemWithURL:gVideoURL];
+        AVPlayerLooper *looper = [AVPlayerLooper playerLooperWithPlayer:player templateItem:item];
+        AVPlayerLayer *pl = [AVPlayerLayer playerLayerWithPlayer:player];
+        pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
+        pl.frame = preview.bounds;
+        [preview addSublayer:pl];
+        [player play];
+        objc_setAssociatedObject(preview, kIVOverlayLayerKey,  pl,     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(preview, kIVOverlayPlayerKey, player, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(preview, kIVOverlayLooperKey, looper, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        IVLog(@"camera: preview overlay attached");
+    } @catch (__unused NSException *e) {}
+}
+// Swizzle AVCaptureVideoPreviewLayer to (1) attach our overlay the instant Badoo
+// gives the layer a session, and (2) keep the overlay sized to the layer on layout.
+static void IVInstallPreviewOverlay(void) {
+    Class prevCls = objc_getClass("AVCaptureVideoPreviewLayer");
+    if (!prevCls) { IVErr(@"camera: AVCaptureVideoPreviewLayer unavailable"); return; }
+
+    SEL setSessionSel = @selector(setSession:);
+    Method sm = class_getInstanceMethod(prevCls, setSessionSel);
+    if (sm) {
+        const char *types = method_getTypeEncoding(sm);
+        IMP origIMP = method_getImplementation(sm);
+        IMP newIMP = imp_implementationWithBlock(^(id layerSelf, AVCaptureSession *session) {
+            ((void(*)(id, SEL, AVCaptureSession *))origIMP)(layerSelf, setSessionSel, session);
+            @try { if (session) IVAttachOverlayToPreview((CALayer *)layerSelf); }
+            @catch (__unused NSException *e) {}
+        });
+        class_replaceMethod(prevCls, setSessionSel, newIMP, types);
     }
 
-    // One-time wiring: the selector, the dedup set, and the delegate learner are
-    // process-global and must be installed exactly once. The feeder is (re)built
-    // below so a container switch within the same launch picks up the new video.
+    SEL layoutSel = @selector(layoutSublayers);
+    Method lm = class_getInstanceMethod(prevCls, layoutSel);
+    if (lm) {
+        const char *types = method_getTypeEncoding(lm);
+        IMP origIMP = method_getImplementation(lm);
+        IMP newIMP = imp_implementationWithBlock(^(id layerSelf) {
+            ((void(*)(id, SEL))origIMP)(layerSelf, layoutSel);
+            @try {
+                CALayer *overlay = objc_getAssociatedObject(layerSelf, kIVOverlayLayerKey);
+                if (overlay) overlay.frame = ((CALayer *)layerSelf).bounds;
+            } @catch (__unused NSException *e) {}
+        });
+        class_replaceMethod(prevCls, layoutSel, newIMP, types);
+    }
+    IVLog(@"camera: preview overlay swizzles installed");
+}
+
+// ============================================================================
+@implementation IVCameraHook
+
++ (void)installGlobal {
+    // Resolve the ONE global verification video shared by every container. No
+    // readable file → nothing to feed, so we don't hook at all (the real camera
+    // passes through untouched, preview included).
+    NSString *path = [IVPaths globalCameraVideoPath];
+    if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        IVLog(@"camera: no global verification video — real camera untouched");
+        return;
+    }
+    gVideoURL = [NSURL fileURLWithPath:path];
+
+    // One-time wiring: the selector, the dedup set, the data-output delegate learner
+    // and the preview-overlay swizzles are process-global and installed exactly once.
+    // The feeder is (re)built below so swapping the global video within one launch
+    // takes effect on the next frame.
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         gDidOutputSel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
         gSwizzledDelegates = [NSMutableSet new];
         IVInstallDelegateLearner();
+        IVInstallPreviewOverlay();
     });
 
-    gFeeder = [[IVVideoFeeder alloc] initWithVideoURL:[NSURL fileURLWithPath:path]];
-    IVLog(@"camera: virtual camera armed for %@ (%@)", container.cid, path.lastPathComponent);
+    gFeeder = [[IVVideoFeeder alloc] initWithVideoURL:gVideoURL];
+    IVLog(@"camera: global virtual camera armed (%@)", path.lastPathComponent);
 }
 
 @end

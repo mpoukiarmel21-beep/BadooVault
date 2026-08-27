@@ -271,4 +271,54 @@ static void IVApplyProtection(NSString *path) {
     }
 }
 
+#pragma mark - Global virtual-camera video (shared by ALL containers)
+
++ (NSString *)globalCameraVideoPath {
+    return [[self cameraDir] stringByAppendingPathComponent:@"global.mov"];
+}
+
++ (BOOL)hasGlobalCameraVideo {
+    NSString *p = [self globalCameraVideoPath];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    BOOL isDir = NO;
+    return [fm fileExistsAtPath:p isDirectory:&isDir] && !isDir &&
+           [[fm attributesOfItemAtPath:p error:NULL] fileSize] > 0;
+}
+
++ (BOOL)importGlobalCameraVideoFromURL:(NSURL *)src {
+    if (!src) return NO;
+    NSString *dst = [self globalCameraVideoPath];
+    if (!dst.length) return NO;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSError *err = nil;
+
+    if ([fm fileExistsAtPath:dst]) {
+        if (![fm removeItemAtPath:dst error:&err]) {
+            IVErr(@"importGlobalCameraVideo: failed to remove existing %@: %@", dst, err);
+            return NO;
+        }
+    }
+    // Picker file URL is valid only during the completion block → copy synchronously.
+    if (![fm copyItemAtURL:src toURL:[NSURL fileURLWithPath:dst] error:&err]) {
+        IVErr(@"importGlobalCameraVideo: copy failed %@ -> %@: %@", src.path, dst, err);
+        [fm removeItemAtPath:dst error:NULL];
+        return NO;
+    }
+    IVApplyProtection(dst);
+    IVLog(@"importGlobalCameraVideo: stored global video (%llu bytes)",
+          (unsigned long long)[[fm attributesOfItemAtPath:dst error:NULL] fileSize]);
+    return YES;
+}
+
++ (void)removeGlobalCameraVideo {
+    NSString *dst = [self globalCameraVideoPath];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if ([fm fileExistsAtPath:dst]) {
+        NSError *err = nil;
+        if (![fm removeItemAtPath:dst error:&err]) {
+            IVErr(@"removeGlobalCameraVideo: failed to remove %@: %@", dst, err);
+        }
+    }
+}
+
 @end

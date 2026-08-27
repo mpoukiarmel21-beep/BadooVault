@@ -4,43 +4,48 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Per-container virtual camera.
+/// Global virtual camera (shared by ALL containers).
 ///
-/// When a container has a verification video configured (IVContainer.cameraVideoPath),
-/// this feeds that video's frames INTO Badoo's own native capture pipeline instead
-/// of the real camera — for the passive photo / pose "Photo Verification" and
-/// profile-photo capture. It works entirely in-process, substrate-free:
+/// When a global verification video is configured ([IVPaths globalCameraVideoPath]),
+/// this feeds that video INTO Badoo's own native capture pipeline instead of the real
+/// camera — for the passive photo / pose "Photo Verification" and profile-photo
+/// capture. It works entirely in-process, substrate-free, and covers BOTH what Badoo
+/// analyzes AND what the user sees on screen:
 ///
-///   1. Swizzle `-[AVCaptureVideoDataOutput setSampleBufferDelegate:queue:]` so we
-///      learn the concrete delegate class Badoo installs the moment it wires up the
-///      camera (which only happens on a user verification action, always AFTER we
-///      install at launch).
-///   2. Swizzle that delegate class's
+///   1. DATA PATH — swizzle `-[AVCaptureVideoDataOutput setSampleBufferDelegate:queue:]`
+///      to learn the concrete delegate class Badoo installs the moment it wires up the
+///      camera, then swizzle that delegate's
 ///      `-captureOutput:didOutputSampleBuffer:fromConnection:`. On every real camera
-///      frame we replace the frame's image buffer with the next frame decoded from
-///      the chosen video (scaled/cropped to the exact incoming geometry + pixel
-///      format, original timing preserved) and forward THAT to Badoo. The video is
-///      looped seamlessly.
+///      frame we replace the image buffer with the next frame decoded from the video
+///      (scaled/cropped to the exact incoming geometry + pixel format, original timing
+///      preserved) and forward THAT to Badoo. The video loops seamlessly.
+///   2. PREVIEW PATH — swizzle `-[AVCaptureVideoPreviewLayer setSession:]` so the
+///      instant Badoo shows a live preview we lay an AVPlayerLayer (looping the same
+///      video, aspect-fill) OVER it. This is what makes the user SEE the video instead
+///      of the real camera; the overlay is kept sized to the preview via a
+///      `layoutSublayers` swizzle.
+///
+/// A single global video is shared by every container by design (the user swaps the
+/// file to verify a different account) — state = the mere existence of the file, no
+/// per-container flag.
 ///
 /// DEFENSIVE BY DESIGN: any failure at any step (missing frameworks, decode error,
 /// geometry mismatch, buffer alloc failure) falls through to Badoo's UNTOUCHED real
-/// frame — the hook must never crash or freeze Badoo's camera.
+/// frame / real preview — the hook must never crash or freeze Badoo's camera.
 ///
 /// HONEST LIMITS (in-process, no jailbreak):
 ///   * Feeds Badoo's OWN native AVFoundation camera only. It does NOT reach the
 ///     Veriff ID/age KYC selfie, which runs getUserMedia inside a WebView in a
 ///     separate process — unreachable by an in-process hook.
-///   * The live on-screen preview (AVCaptureVideoPreviewLayer) is driven by the OS
-///     compositor from the hardware feed, so it may still show the REAL camera even
-///     while the frames DELIVERED to Badoo are the video.
-///
-/// Idempotent; gated to isolated containers only.
+///   * The still-photo path via AVCapturePhotoOutput yields an immutable AVCapturePhoto
+///     whose pixels can't be swapped in place; verification flows that rely on the
+///     continuous video-data stream (the common passive/pose check) ARE covered.
 @interface IVCameraHook : NSObject
 
-/// Install for the active isolated container. No-op unless `container.cameraVideoPath`
-/// resolves to a readable file. Idempotent; call once from Bootstrap under the
-/// `isolated` gate.
-+ (void)installForContainer:(IVContainer *)container;
+/// Install the global virtual camera. No-op unless a global verification video exists
+/// ([IVPaths hasGlobalCameraVideo]). Idempotent; call once from Bootstrap
+/// UNCONDITIONALLY at launch (NOT under the isolation gate — the camera is global).
++ (void)installGlobal;
 
 @end
 

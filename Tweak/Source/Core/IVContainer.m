@@ -53,6 +53,8 @@ NSString *const kIVDefaultCID = @"default";
         _autoSwipeCount = [dict[@"autoSwipeCount"] isKindOfClass:[NSNumber class]] ? [dict[@"autoSwipeCount"] integerValue] : 0;
         _autoSwipeMinDelay = [dict[@"autoSwipeMinDelay"] isKindOfClass:[NSNumber class]] ? [dict[@"autoSwipeMinDelay"] doubleValue] : 0;
         _autoSwipeMaxDelay = [dict[@"autoSwipeMaxDelay"] isKindOfClass:[NSNumber class]] ? [dict[@"autoSwipeMaxDelay"] doubleValue] : 0;
+        _autoSwipeMethod = [dict[@"autoSwipeMethod"] isKindOfClass:[NSNumber class]] ? [dict[@"autoSwipeMethod"] integerValue] : 0;
+        _autoSwipeLikePercent = [dict[@"autoSwipeLikePercent"] isKindOfClass:[NSNumber class]] ? [dict[@"autoSwipeLikePercent"] integerValue] : 50;
         _createdAt = [dict[@"createdAt"] isKindOfClass:[NSDate class]] ? dict[@"createdAt"] : [NSDate date];
         _lastUsedAt = [dict[@"lastUsedAt"] isKindOfClass:[NSDate class]] ? dict[@"lastUsedAt"] : nil;
     }
@@ -78,6 +80,8 @@ NSString *const kIVDefaultCID = @"default";
     if (self.autoSwipeCount > 0) d[@"autoSwipeCount"] = @(self.autoSwipeCount);
     if (self.autoSwipeMinDelay > 0) d[@"autoSwipeMinDelay"] = @(self.autoSwipeMinDelay);
     if (self.autoSwipeMaxDelay > 0) d[@"autoSwipeMaxDelay"] = @(self.autoSwipeMaxDelay);
+    if (self.autoSwipeMethod != 0) d[@"autoSwipeMethod"] = @(self.autoSwipeMethod);
+    if (self.autoSwipeLikePercent != 50) d[@"autoSwipeLikePercent"] = @(self.autoSwipeLikePercent);
     d[@"createdAt"] = self.createdAt ?: [NSDate date];
     if (self.lastUsedAt) d[@"lastUsedAt"] = self.lastUsedAt;
     return [d copy];

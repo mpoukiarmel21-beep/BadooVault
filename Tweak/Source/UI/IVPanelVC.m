@@ -18,7 +18,7 @@
 @interface IVPanelVC () <UITableViewDataSource, UITableViewDelegate, PHPickerViewControllerDelegate>
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, copy) NSArray<IVContainer *> *items;
-@property (nonatomic, strong, nullable) IVContainer *pendingCameraContainer;
+@property (nonatomic, strong, nullable) UIBarButtonItem *cameraBarButton;
 @end
 
 @implementation IVPanelVC
@@ -52,9 +52,17 @@
     self.navigationItem.leftBarButtonItem =
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                                                       target:self action:@selector(close)];
-    self.navigationItem.rightBarButtonItem =
+    UIBarButtonItem *add =
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd
                                                       target:self action:@selector(createNew)];
+    // Global virtual camera lives on the nav bar (shared by every container: the
+    // user just swaps the one video to verify a different account). Glyph reflects
+    // whether a global video is currently set.
+    self.cameraBarButton =
+        [[UIBarButtonItem alloc] initWithImage:[self globalCameraGlyph]
+                                         style:UIBarButtonItemStylePlain
+                                        target:self action:@selector(manageGlobalCamera)];
+    self.navigationItem.rightBarButtonItems = @[ add, self.cameraBarButton ];
 
     self.table = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
     self.table.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -155,11 +163,13 @@
 // per-container settings are one tap away without opening a menu (the user asked to
 // bring the icons back — "remets les icônes ... c'est beaucoup plus simple"). The
 // DEFAULT (real) container only carries the fake-GPS pin; a real container has no
-// spoofed device / verification camera / auto-swipe to configure. Each NON-default
-// row shows four glyphs — appareil, localisation, caméra de vérif, auto-swipe —
-// tinted accent once that feature is configured, neutral otherwise. Each button
-// carries the row index in its tag so the handler resolves the container at tap
-// time (self.items stays in sync across reloads).
+// spoofed device / auto-swipe to configure. Each NON-default row shows the
+// localisation pin FIRST and enlarged so it reads as the row's primary affordance
+// ("la tourelle, tu le mets sur le conteneur pour que ça soit visible"), then the
+// appareil glyph, then auto-swipe. The verification camera is GLOBAL now (one shared
+// video for every container) so it lives on the nav bar, not per row. Each button
+// carries the row index in its tag so the handler resolves the container at tap time
+// (self.items stays in sync across reloads).
 - (nullable UIView *)trailingControlsForRow:(NSInteger)row {
     if (row < 0 || row >= (NSInteger)self.items.count) return nil;
     IVContainer *c = self.items[row];
@@ -178,24 +188,24 @@
         return wrap;
     }
 
-    // Non-default: appareil · localisation · caméra · auto-swipe.
-    BOOL hasVideo = c.cameraVideoPath.length > 0;
+    // Non-default: localisation (leading & prominent) · appareil · auto-swipe.
     BOOL swipeOn = c.autoSwipeEnabled;
     UIButton *dev = [self glyphButton:@"iphone"
                                   row:row action:@selector(deviceInfoFromControl:)
                                  tint:IVTheme.secondaryText];
-    UIButton *cam = [self glyphButton:(hasVideo ? @"video.fill" : @"video")
-                                  row:row action:@selector(cameraFromControl:)
-                                 tint:(hasVideo ? IVTheme.accent : IVTheme.secondaryText)];
     UIButton *swipe = [self glyphButton:(swipeOn ? @"hand.draw.fill" : @"hand.draw")
                                     row:row action:@selector(autoSwipeFromControl:)
                                    tint:(swipeOn ? IVTheme.accent : IVTheme.secondaryText)];
 
-    NSArray<UIButton *> *buttons = @[ dev, pin, cam, swipe ];
-    const CGFloat bw = 34.0, bh = 40.0;
-    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, bw * buttons.count, bh)];
-    [buttons enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
-        b.frame = CGRectMake(bw * i, 0, bw, bh);
+    // Pin leads and is wider than the rest so it stands out as the row's headline
+    // control; the smaller glyphs trail it.
+    const CGFloat pinW = 46.0, bw = 34.0, bh = 40.0;
+    NSArray<UIButton *> *trailing = @[ dev, swipe ];
+    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, pinW + bw * trailing.count, bh)];
+    pin.frame = CGRectMake(0, 0, pinW, bh);
+    [wrap addSubview:pin];
+    [trailing enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
+        b.frame = CGRectMake(pinW + bw * i, 0, bw, bh);
         [wrap addSubview:b];
     }];
     return wrap;
@@ -292,32 +302,12 @@
     [self.navigationController pushViewController:map animated:YES];
 }
 
-#pragma mark - Row icon handlers (device · caméra · auto-swipe)
+#pragma mark - Row icon handlers (device · auto-swipe)
 
 // "Téléphone" : ouvre la fiche appareil (modèle, iOS, série — lecture seule).
 - (void)deviceInfoFromControl:(UIButton *)sender {
     IVContainer *c = [self containerForControl:sender];
     if (c) [self showDeviceInfoFor:c];
-}
-
-// "Vérif" : si une vidéo caméra est déjà définie, propose de la changer ou de la
-// retirer ; sinon ouvre directement le sélecteur de vidéo.
-- (void)cameraFromControl:(UIButton *)sender {
-    IVContainer *c = [self containerForControl:sender];
-    if (!c) return;
-    if (c.cameraVideoPath.length == 0) { [self showCameraFor:c]; return; }
-    __weak typeof(self) ws = self;
-    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:c.name
-                                                        message:@"Vidéo de vérification définie ✓"];
-    [sheet addAction:[IVAction actionWithTitle:@"Changer la vidéo"
-                                        symbol:@"video.badge.plus"
-                                         style:IVActionStyleDefault
-                                       handler:^{ [ws showCameraFor:c]; }]];
-    [sheet addAction:[IVAction actionWithTitle:@"Retirer la vidéo"
-                                        symbol:@"video.slash"
-                                         style:IVActionStyleDestructive
-                                       handler:^{ [ws removeCameraFor:c]; }]];
-    [sheet presentFrom:self];
 }
 
 // "Auto-swipe" : ouvre le panneau de configuration du bot pour ce conteneur.
@@ -468,15 +458,45 @@
     [self.navigationController pushViewController:p animated:YES];
 }
 
-#pragma mark - Caméra virtuelle (vidéo de vérification)
+#pragma mark - Caméra virtuelle globale (vidéo de vérification partagée)
 
-// Per-container virtual camera: the user picks ONE video that will feed Badoo's
-// OWN native capture pipeline during photo/pose verification on this container.
+// The virtual camera is GLOBAL: ONE video feeds Badoo's OWN native capture pipeline
+// for every container. The user swaps the single file to verify a different account
+// ("Tu peux mettre le même système de caméra pour tous les containers et moi j'aurais
+// qu'à changer la vidéo"). State = the mere existence of the global video on disk.
+
+// Nav-bar glyph reflecting whether a global video is currently set (filled = set).
+- (UIImage *)globalCameraGlyph {
+    BOOL has = [IVPaths hasGlobalCameraVideo];
+    return [UIImage systemImageNamed:(has ? @"video.fill" : @"video")];
+}
+
+- (void)refreshCameraBarButton {
+    self.cameraBarButton.image = [self globalCameraGlyph];
+    self.cameraBarButton.tintColor = [IVPaths hasGlobalCameraVideo] ? IVTheme.accent : nil;
+}
+
+// Tap the nav-bar camera: pick a video if none is set, otherwise offer to change or
+// remove the one shared by every container.
+- (void)manageGlobalCamera {
+    if (![IVPaths hasGlobalCameraVideo]) { [self pickGlobalCameraVideo]; return; }
+    __weak typeof(self) ws = self;
+    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:@"Caméra virtuelle"
+                                                        message:@"Vidéo de vérification définie ✓ (partagée par tous les conteneurs)"];
+    [sheet addAction:[IVAction actionWithTitle:@"Changer la vidéo"
+                                        symbol:@"video.badge.plus"
+                                         style:IVActionStyleDefault
+                                       handler:^{ [ws pickGlobalCameraVideo]; }]];
+    [sheet addAction:[IVAction actionWithTitle:@"Retirer la vidéo"
+                                        symbol:@"video.slash"
+                                         style:IVActionStyleDestructive
+                                       handler:^{ [ws removeGlobalCameraVideo]; }]];
+    [sheet presentFrom:self];
+}
+
 // PHPickerViewController runs out-of-process (no photo-library permission prompt).
-- (void)showCameraFor:(IVContainer *)c {
-    if (!c) return;
+- (void)pickGlobalCameraVideo {
     if (@available(iOS 14.0, *)) {
-        self.pendingCameraContainer = c;
         PHPickerConfiguration *cfg = [[PHPickerConfiguration alloc] init];
         cfg.filter = [PHPickerFilter videosFilter];
         cfg.selectionLimit = 1;
@@ -489,22 +509,17 @@
     }
 }
 
-- (void)removeCameraFor:(IVContainer *)c {
-    if (!c) return;
-    if ([[IVContainerStore shared] setCameraVideoPath:nil forContainer:c]) {
-        [IVPaths removeCameraVideoForCID:c.cid];
-        [self reload];
-    } else {
-        [self warn:@"Échec" msg:@"Impossible de retirer la vidéo (écriture disque échouée)."];
-    }
+- (void)removeGlobalCameraVideo {
+    [IVPaths removeGlobalCameraVideo];
+    [self refreshCameraBarButton];
+    [self warn:@"Vidéo retirée"
+           msg:@"La caméra virtuelle est désactivée : Badoo utilisera de nouveau la vraie caméra."];
 }
 
 - (void)picker:(PHPickerViewController *)picker
     didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14.0)) {
     [picker dismissViewControllerAnimated:YES completion:nil];
-    IVContainer *c = self.pendingCameraContainer;
-    self.pendingCameraContainer = nil;
-    if (!c || results.count == 0) return;
+    if (results.count == 0) return;
 
     NSItemProvider *provider = results.firstObject.itemProvider;
     if (![provider hasItemConformingToTypeIdentifier:@"public.movie"]) {
@@ -513,25 +528,19 @@
     }
     // The vended file URL is valid ONLY for the duration of this completion block,
     // so we import (copy into the control dir) synchronously here, then hop to the
-    // main queue for the store mutation + UI refresh.
+    // main queue for the UI refresh.
     [provider loadFileRepresentationForTypeIdentifier:@"public.movie"
                                     completionHandler:^(NSURL *url, NSError *error) {
-        BOOL imported = (url != nil) && [IVPaths importCameraVideoFromURL:url forCID:c.cid];
+        BOOL imported = (url != nil) && [IVPaths importGlobalCameraVideoFromURL:url];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!imported) {
                 [self warn:@"Import échoué" msg:@"La vidéo n'a pas pu être copiée. Réessaie."];
                 return;
             }
-            NSString *dst = [IVPaths cameraVideoPathForCID:c.cid];
-            if ([[IVContainerStore shared] setCameraVideoPath:dst forContainer:c]) {
-                [self reload];
-                [self warn:@"Vidéo enregistrée"
-                       msg:@"Elle alimentera la caméra native de Badoo lors de la vérification, sur "
-                           @"ce conteneur. Redémarre l'app pour l'activer."];
-            } else {
-                [IVPaths removeCameraVideoForCID:c.cid];
-                [self warn:@"Échec" msg:@"Impossible d'enregistrer le chemin de la vidéo."];
-            }
+            [self refreshCameraBarButton];
+            [self warn:@"Vidéo enregistrée"
+                   msg:@"Elle alimentera la caméra native de Badoo lors de la vérification, sur "
+                       @"tous les conteneurs. Redémarre l'app pour l'activer."];
         });
     }];
 }

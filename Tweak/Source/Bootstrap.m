@@ -192,19 +192,17 @@ static void IVBootstrap(void) {
             NSString *root = [IVPaths containerRootForCID:active.cid];
             [IVPaths reapplyProtectionRecursivelyAtRoot:root];
             IVInstallBackgroundReprotect(root);
-
-            // Per-container virtual camera. If this container has a chosen
-            // verification VIDEO, feed it into Badoo's OWN native AVFoundation
-            // capture stream (the "Photo Verification" selfie/pose flow) so the
-            // pose recording shows the selected footage instead of the live
-            // camera. No-op unless a readable video is set for this cid — then
-            // the real camera passes through untouched. Isolated containers only,
-            // like every other spoof. HONEST LIMIT: this reaches Badoo's in-app
-            // AVFoundation camera only; it does NOT reach Veriff's WebView
-            // getUserMedia ID/age selfie (a separate WKWebView process), and a
-            // live AVCaptureVideoPreviewLayer may still mirror the real camera.
-            [IVCameraHook installForContainer:active];
         }
+
+        // 5b. Global virtual camera — GLOBAL, not gated to isolation: one shared
+        //     verification VIDEO for every container (the user swaps the file per
+        //     account). If a global video is set, feed it into Badoo's OWN native
+        //     AVFoundation capture stream AND overlay it on the live preview so the
+        //     on-screen camera shows the footage, not the real lens. No-op (real
+        //     camera untouched) when no global video exists. HONEST LIMIT: reaches
+        //     Badoo's in-app AVFoundation camera only; NOT Veriff's WebView
+        //     getUserMedia ID/age selfie (a separate WKWebView process).
+        [IVCameraHook installGlobal];
 
         // 6. Location spoof — safe to install always; reads the active container
         //    live and passes through when no location is set.

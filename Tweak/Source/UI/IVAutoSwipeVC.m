@@ -7,7 +7,10 @@
 @interface IVAutoSwipeVC () <UITextViewDelegate>
 @property (nonatomic, strong) IVContainer *container;
 @property (nonatomic, strong) UITextView *phrasesView;
+@property (nonatomic, strong) UISegmentedControl *methodControl;
 @property (nonatomic, strong) UITextField *countField;
+@property (nonatomic, strong) UITextField *likeField;
+@property (nonatomic, strong) UITextField *dislikeField;
 @property (nonatomic, strong) UITextField *minField;
 @property (nonatomic, strong) UITextField *maxField;
 @property (nonatomic, strong) UIButton *runButton;
@@ -73,19 +76,43 @@
     [stack addArrangedSubview:[self sectionTitle:@"Phrases envoyées sur un match"]];
     [stack addArrangedSubview:[self hint:@"Une phrase par ligne. À chaque match, le bot en envoie une au hasard. Laisse vide pour liker sans écrire."]];
     self.phrasesView = [self makeTextView];
-    [self.phrasesView.heightAnchor constraintGreaterThanOrEqualToConstant:120].active = YES;
+    [self.phrasesView.heightAnchor constraintGreaterThanOrEqualToConstant:72].active = YES;
     self.phrasesView.text = [self.container.autoSwipeMessages componentsJoinedByString:@"\n"] ?: @"";
     [stack addArrangedSubview:self.phrasesView];
+
+    [stack addArrangedSubview:[self sectionTitle:@"Méthode"]];
+    self.methodControl = [[UISegmentedControl alloc] initWithItems:@[ @"Boutons", @"Gestes" ]];
+    self.methodControl.selectedSegmentIndex = (self.container.autoSwipeMethod == 1) ? 1 : 0;
+    self.methodControl.selectedSegmentTintColor = IVTheme.accent;
+    [self.methodControl setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.secondaryText } forState:UIControlStateNormal];
+    [self.methodControl setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.onAccent } forState:UIControlStateSelected];
+    [self.methodControl.heightAnchor constraintEqualToConstant:36].active = YES;
+    [stack addArrangedSubview:self.methodControl];
+    [stack addArrangedSubview:[self hint:@"Boutons : appuie sur le ✕ / ♥ de Badoo (robuste). Gestes : simule un glissement du doigt gauche/droite (repli automatique sur Boutons si indisponible)."]];
 
     [stack addArrangedSubview:[self sectionTitle:@"Paramètres de swipe"]];
     self.countField = [self fieldRowInStack:stack label:@"Nombre de swipes (0 = illimité)"
                                        value:(self.container.autoSwipeCount > 0 ? [NSString stringWithFormat:@"%ld", (long)self.container.autoSwipeCount] : @"0")];
+    self.countField.keyboardType = UIKeyboardTypeNumberPad;
+
+    NSInteger like = self.container.autoSwipeLikePercent;
+    if (like < 0 || like > 100) like = 50;
+    self.likeField = [self fieldRowInStack:stack label:@"% de like (droite)"
+                                      value:[NSString stringWithFormat:@"%ld", (long)like]];
+    self.likeField.keyboardType = UIKeyboardTypeNumberPad;
+    [self.likeField addTarget:self action:@selector(likeChanged) forControlEvents:UIControlEventEditingChanged];
+
+    self.dislikeField = [self fieldRowInStack:stack label:@"% de dislike (gauche)"
+                                         value:[NSString stringWithFormat:@"%ld", (long)(100 - like)]];
+    self.dislikeField.keyboardType = UIKeyboardTypeNumberPad;
+    [self.dislikeField addTarget:self action:@selector(dislikeChanged) forControlEvents:UIControlEventEditingChanged];
+
     self.minField = [self fieldRowInStack:stack label:@"Délai min entre actions (s)"
                                      value:(self.container.autoSwipeMinDelay >= 1 ? [self fmt:self.container.autoSwipeMinDelay] : @"3")];
     self.maxField = [self fieldRowInStack:stack label:@"Délai max entre actions (s)"
                                      value:(self.container.autoSwipeMaxDelay >= 1 ? [self fmt:self.container.autoSwipeMaxDelay] : @"7")];
 
-    [stack addArrangedSubview:[self hint:@"Détection best-effort : le bot appuie sur le like de Badoo, repère le popup « match » et envoie une phrase. Selon la version de Badoo, un réglage sur l'appareil peut être nécessaire."]];
+    [stack addArrangedSubview:[self hint:@"Détection best-effort : le bot agit sur l'UI de Badoo (like/dislike + popup « match »). Selon la version de Badoo, un réglage sur l'appareil peut être nécessaire."]];
 
     self.runButton = [self makeRunButton];
     [self.runButton.heightAnchor constraintEqualToConstant:52].active = YES;
@@ -148,7 +175,7 @@
 
     UITextField *tf = [UITextField new];
     tf.text = value;
-    tf.textAlignment = NSTextAlignmentRight;
+    tf.textAlignment = NSTextAlignmentLeft;
     tf.textColor = IVTheme.primaryText;
     tf.font = [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightSemibold];
     tf.keyboardType = UIKeyboardTypeDecimalPad;
@@ -198,20 +225,41 @@
     return out;
 }
 
+// Auto-complement: like% + dislike% must sum to 100. Editing one fills the other.
+// Clamp to 0..100 as the user types; leave the edited field's raw text alone so the
+// caret doesn't jump, only rewrite the sibling.
+- (void)likeChanged {
+    NSInteger v = [self.likeField.text integerValue];
+    if (v < 0) v = 0; if (v > 100) v = 100;
+    self.dislikeField.text = [NSString stringWithFormat:@"%ld", (long)(100 - v)];
+}
+
+- (void)dislikeChanged {
+    NSInteger v = [self.dislikeField.text integerValue];
+    if (v < 0) v = 0; if (v > 100) v = 100;
+    self.likeField.text = [NSString stringWithFormat:@"%ld", (long)(100 - v)];
+}
+
 // Read + clamp the form, reflect the clamped values back into the fields, persist.
 - (BOOL)persistConfigEnabled:(BOOL)enabled {
     NSArray<NSString *> *msgs = [self parsedPhrases];
     NSInteger count = [self.countField.text integerValue];
     if (count < 0) count = 0;
+    NSInteger method = self.methodControl.selectedSegmentIndex == 1 ? 1 : 0;
+    NSInteger like = [self.likeField.text integerValue];
+    if (like < 0) like = 0; if (like > 100) like = 100;
     double mn = [self.minField.text doubleValue];
     double mx = [self.maxField.text doubleValue];
     if (mn < 1) mn = 1;
     if (mx < mn) mx = mn;
     self.countField.text = [NSString stringWithFormat:@"%ld", (long)count];
+    self.likeField.text = [NSString stringWithFormat:@"%ld", (long)like];
+    self.dislikeField.text = [NSString stringWithFormat:@"%ld", (long)(100 - like)];
     self.minField.text = [self fmt:mn];
     self.maxField.text = [self fmt:mx];
     return [[IVContainerStore shared] setAutoSwipeEnabled:enabled messages:msgs
                                                     count:count minDelay:mn maxDelay:mx
+                                                   method:method likePercent:like
                                              forContainer:self.container];
 }
 

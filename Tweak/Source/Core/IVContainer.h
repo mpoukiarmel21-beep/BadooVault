@@ -64,6 +64,17 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) double autoSwipeMinDelay;   // seconds, >= 1
 @property (nonatomic, assign) double autoSwipeMaxDelay;   // seconds, >= min
 
+/// How the bot advances profiles. 0 = "Boutons" (taps Badoo's own like/dislike
+/// controls — robust, the default). 1 = "Gestes" (synthesizes a finger swipe
+/// left/right — best-effort, auto-falls back to Boutons when synthesis is
+/// unavailable). See IVAutoSwipe.
+@property (nonatomic, assign) NSInteger autoSwipeMethod;   // 0 = boutons, 1 = gestes
+
+/// Percentage of actions that are LIKES (0..100). The complement is DISLIKES.
+/// Each action rolls this weight to pick like vs dislike, so a value of 10 means
+/// ~10% likes / ~90% dislikes. Default 50 when unset.
+@property (nonatomic, assign) NSInteger autoSwipeLikePercent;   // 0..100
+
 @property (nonatomic, strong) NSDate *createdAt;
 @property (nonatomic, strong, nullable) NSDate *lastUsedAt;
 

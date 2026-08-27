@@ -95,6 +95,8 @@ extern NSString *const kIVActiveChanged;       // active container changed
                       count:(NSInteger)count
                    minDelay:(double)minDelay
                    maxDelay:(double)maxDelay
+                     method:(NSInteger)method
+                likePercent:(NSInteger)likePercent
                forContainer:(IVContainer *)c;
 
 /// Global reset: delete every non-default container's data + clear the list to

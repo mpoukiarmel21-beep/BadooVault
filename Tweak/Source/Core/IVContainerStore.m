@@ -331,6 +331,8 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
                       count:(NSInteger)count
                    minDelay:(double)minDelay
                    maxDelay:(double)maxDelay
+                     method:(NSInteger)method
+                likePercent:(NSInteger)likePercent
                forContainer:(IVContainer *)c {
     [_lock lock];
     @try {
@@ -339,17 +341,23 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
         NSInteger pCount = c.autoSwipeCount;
         double pMin = c.autoSwipeMinDelay;
         double pMax = c.autoSwipeMaxDelay;
+        NSInteger pMethod = c.autoSwipeMethod;
+        NSInteger pLike = c.autoSwipeLikePercent;
         c.autoSwipeEnabled = enabled;
         c.autoSwipeMessages = messages.count ? [messages copy] : nil;
         c.autoSwipeCount = count > 0 ? count : 0;
         c.autoSwipeMinDelay = minDelay;
         c.autoSwipeMaxDelay = maxDelay;
+        c.autoSwipeMethod = (method == 1) ? 1 : 0;
+        c.autoSwipeLikePercent = likePercent < 0 ? 0 : (likePercent > 100 ? 100 : likePercent);
         if (![self persistLocked]) {
             c.autoSwipeEnabled = pEnabled;   // roll back every field
             c.autoSwipeMessages = pMsgs;
             c.autoSwipeCount = pCount;
             c.autoSwipeMinDelay = pMin;
             c.autoSwipeMaxDelay = pMax;
+            c.autoSwipeMethod = pMethod;
+            c.autoSwipeLikePercent = pLike;
             IVErr(@"setAutoSwipeEnabled: persist failed for %@ — rolled back", c.cid);
             return NO;
         }

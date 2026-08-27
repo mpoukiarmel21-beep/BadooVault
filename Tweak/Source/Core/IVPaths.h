@@ -73,6 +73,26 @@ NS_ASSUME_NONNULL_BEGIN
 /// removed or its video is cleared.
 + (void)removeCameraVideoForCID:(NSString *)cid;
 
+#pragma mark - Global virtual-camera video (shared by ALL containers)
+
+/// <controlDir>/Cameras/global.mov — the SINGLE verification video shared by every
+/// container. The user asked to "mettre le même système de caméra pour tous les
+/// conteneurs" and just swap this one video per account, so the virtual camera is
+/// global, not per-cid. Existence of this file IS the "camera configured" state
+/// (derived, never a plist flag). Lives under the shared control dir, lock-readable.
++ (NSString *)globalCameraVideoPath;
+
+/// YES iff a readable global verification video is present.
++ (BOOL)hasGlobalCameraVideo;
+
+/// Copy `src` (a picker temp URL, valid only synchronously) to the global video
+/// path, replacing any existing one, then stamp it lock-readable. MUST run
+/// synchronously inside the picker completion block. Returns NO + logs on failure.
++ (BOOL)importGlobalCameraVideoFromURL:(NSURL *)src;
+
+/// Delete the global verification video (no-op if absent).
++ (void)removeGlobalCameraVideo;
+
 @end
 
 NS_ASSUME_NONNULL_END
