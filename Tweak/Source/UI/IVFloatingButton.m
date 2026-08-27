@@ -1,6 +1,5 @@
 #import "IVFloatingButton.h"
 #import "IVPanelVC.h"
-#import "IVGlass.h"
 #import "IVTheme.h"
 
 #pragma mark - Passthrough overlay window
@@ -19,28 +18,28 @@
 }
 @end
 
-#pragma mark - Top view controller (present on the app's key window)
+#pragma mark - Dedicated presentation window (hosts the panel)
 
-/// Find a controller to present the panel on. Prefer the foreground scene's key
-/// window, but never return nil just because no window reports isKeyWindow — some
-/// hosts leave no window key, which used to make the tap silently do nothing.
-static UIViewController *IVTopViewController(void) {
-    UIWindow *best = nil;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
-        for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-            if ([w isKindOfClass:[IVOverlayWindow class]] || w.isHidden) continue;
-            if (w.isKeyWindow) { best = w; break; }
-            if (!best) best = w;   // fallback: first visible non-overlay window
+// Presenting the panel on the HOST app's "top" view controller proved fragile:
+// when that controller was busy (already presenting, mid-transition, or owned by
+// a lingering system alert) UIKit silently DROPPED the request and the tap did
+// nothing — the "rien ne se passe" report. We present on our OWN full-screen
+// window instead: always available, never owned by Badoo, so a tap ALWAYS opens
+// the menu regardless of what the host is doing.
+@interface IVPresentationWindow : UIWindow
+@end
+@implementation IVPresentationWindow
+@end
+
+// The foreground-active window scene, or nil if the app UI isn't up yet.
+static UIWindowScene *IVActiveWindowScene(void) {
+    for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+        if ([s isKindOfClass:[UIWindowScene class]] &&
+            s.activationState == UISceneActivationStateForegroundActive) {
+            return (UIWindowScene *)s;
         }
-        if (best.isKeyWindow) break;
     }
-    UIViewController *vc = best.rootViewController;
-    while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed) {
-        vc = vc.presentedViewController;
-    }
-    return vc;
+    return nil;
 }
 
 #pragma mark - Floating button
@@ -53,6 +52,7 @@ static const CGFloat kIVPad = 18.0;   // shadow padding around the button
 @property (nonatomic, strong) IVOverlayWindow *window;
 @property (nonatomic, strong) UIView *container;      // button container (live area)
 @property (nonatomic, strong) UIViewController *presentedNav;   // guard double-present
+@property (nonatomic, strong) IVPresentationWindow *presWindow; // our own presentation window
 @end
 
 @implementation IVFloatingButton
@@ -102,19 +102,40 @@ static const CGFloat kIVPad = 18.0;   // shadow padding around the button
     container.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:container.bounds
                                                            cornerRadius:kIVButtonSize / 2.0].CGPath;
 
-    // Glass background — NON-interactive and touch-transparent, so the button on
-    // top always receives the tap. An interactive UIGlassEffect installs its own
-    // gesture/interaction that could swallow the tap (the old "rien ne se passe").
-    UIVisualEffectView *glass = [IVGlass glassViewWithCornerRadius:kIVButtonSize / 2.0
-                                                              tint:IVTheme.accent
-                                                       interactive:NO];
-    glass.frame = container.bounds;
-    glass.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    glass.userInteractionEnabled = NO;
-    // Hairline edge so the glass reads as a crisp disc over busy content.
-    glass.layer.borderWidth = 0.5;
-    glass.layer.borderColor = IVTheme.hairline.CGColor;
-    [container addSubview:glass];
+    // Solid violet gradient disc. The old UIGlassEffect background rendered
+    // near-clear / white on some builds (the "tout blanc" report) and its size
+    // was ambiguous (IVGlass returns an autolayout view, but here we position by
+    // frame). A CAGradientLayer disc is deterministic — it always paints the
+    // brand violet, so the button reads as a designed control on any background.
+    UIView *disc = [[UIView alloc] initWithFrame:container.bounds];
+    disc.userInteractionEnabled = NO;                 // the button on top gets the tap
+    disc.backgroundColor = IVTheme.accent;            // fallback if the layers fail
+    disc.layer.cornerRadius = kIVButtonSize / 2.0;
+    disc.layer.cornerCurve = kCACornerCurveContinuous;
+    disc.clipsToBounds = YES;
+    disc.layer.borderWidth = 1.0;                     // crisp hairline edge over busy content
+    disc.layer.borderColor = IVTheme.hairline.CGColor;
+    disc.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+
+    // Diagonal accent → accentDeep fill gives the disc depth.
+    CAGradientLayer *fill = [CAGradientLayer layer];
+    fill.frame = disc.bounds;
+    fill.colors = @[(id)IVTheme.accent.CGColor, (id)IVTheme.accentDeep.CGColor];
+    fill.startPoint = CGPointMake(0.15, 0.0);
+    fill.endPoint = CGPointMake(0.85, 1.0);
+    fill.cornerRadius = kIVButtonSize / 2.0;
+    [disc.layer addSublayer:fill];
+
+    // Top specular gloss so the disc reads as a raised, glassy control.
+    CAGradientLayer *gloss = [CAGradientLayer layer];
+    gloss.frame = CGRectMake(0, 0, container.bounds.size.width, container.bounds.size.height * 0.55);
+    gloss.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.38].CGColor,
+                     (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor];
+    gloss.startPoint = CGPointMake(0.5, 0.0);
+    gloss.endPoint = CGPointMake(0.5, 1.0);
+    [disc.layer addSublayer:gloss];
+
+    [container addSubview:disc];
 
     // The real interactive layer: a UIButton reliably turns a stationary touch
     // into an action while coexisting with the drag pan on the container.
@@ -225,19 +246,17 @@ static const CGFloat kIVPad = 18.0;   // shadow padding around the button
 
 - (void)onTap {
     // Already showing the panel? Ignore (avoids double-present).
-    if (self.presentedNav && self.presentedNav.presentingViewController) return;
+    if (self.presWindow || (self.presentedNav && self.presentedNav.presentingViewController)) return;
 
-    UIViewController *top = IVTopViewController();
-    // Never present onto a controller that is busy — already presenting
-    // something, or mid-transition. UIKit silently drops such a request; if we
-    // had already hidden the button window, it would then stay hidden forever
-    // with no tap target to bring it back. That was the "after I switch to the
-    // container I just created, the menu button stops working" report: closing
-    // the panel and re-tapping while the previous sheet was still dismissing (or
-    // while a lingering alert owned the top VC) hid the button behind a present
-    // that never happened. Bail while the button is still visible; the next tap
-    // retries once the top VC is free.
-    if (!top || top.presentedViewController || top.isBeingPresented || top.isBeingDismissed) return;
+    // We host the panel on our OWN full-screen window, so all we need is a
+    // foreground-active scene to attach it to. Presenting on Badoo's "top" view
+    // controller proved fragile: when that controller was busy (mid-transition,
+    // owning a lingering alert, already presenting) UIKit SILENTLY dropped the
+    // request and the tap did nothing — the "rien ne se passe" report. A window
+    // we own is never busy, so a tap ALWAYS opens the menu. If the UI isn't up
+    // yet, bail with the button still visible; the next tap retries.
+    UIWindowScene *scene = IVActiveWindowScene();
+    if (!scene) return;
 
     // Press feedback (skipped under Reduce Motion).
     if (!UIAccessibilityIsReduceMotionEnabled()) {
@@ -248,9 +267,21 @@ static const CGFloat kIVPad = 18.0;   // shadow padding around the button
         }];
     }
 
+    // Full-screen transparent window that we own. initWithWindowScene sizes it to
+    // the scene automatically. It sits just above the app's normal content and
+    // below our button window, and hosts the page-sheet presentation.
+    IVPresentationWindow *pw = [[IVPresentationWindow alloc] initWithWindowScene:scene];
+    pw.windowLevel = UIWindowLevelNormal + 3;
+    pw.backgroundColor = UIColor.clearColor;
+    UIViewController *host = [UIViewController new];
+    host.view.backgroundColor = UIColor.clearColor;
+    pw.rootViewController = host;
+    [pw makeKeyAndVisible];
+    self.presWindow = pw;
+
     IVPanelVC *panel = [IVPanelVC new];
     __weak typeof(self) ws = self;
-    panel.onClose = ^{ [ws showButton]; };   // restore the button when the menu closes
+    panel.onClose = ^{ [ws teardownPresentation]; };   // restore the button when the menu closes
 
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:panel];
     nav.modalPresentationStyle = UIModalPresentationPageSheet;
@@ -258,25 +289,29 @@ static const CGFloat kIVPad = 18.0;   // shadow padding around the button
     self.presentedNav = nav;
 
     // Hide the button only once the sheet is actually on screen (in the present
-    // completion). If the present is ever a no-op, the window is never stranded
-    // hidden behind a menu that isn't there.
-    [top presentViewController:nav animated:YES completion:^{
+    // completion). If the present were ever a no-op, the button window is never
+    // stranded hidden behind a menu that isn't there.
+    [host presentViewController:nav animated:YES completion:^{
         ws.window.hidden = YES;
     }];
 }
 
-// Idempotent: bring the button back and clear the presentation guard. Called
-// from the panel's onClose (Close button) and the presentation delegate (swipe),
-// so the button always returns no matter how the menu was dismissed.
-- (void)showButton {
+// Idempotent: bring the button back, clear the presentation guard, and tear
+// down our presentation window. Called from the panel's onClose (Close button)
+// and the presentation delegate (swipe), so the button always returns and the
+// window is never left holding key/visible state behind a dismissed menu.
+- (void)teardownPresentation {
     self.window.hidden = NO;
     self.presentedNav = nil;
+    self.presWindow.hidden = YES;
+    self.presWindow.rootViewController = nil;
+    self.presWindow = nil;
 }
 
 #pragma mark - UIAdaptivePresentationControllerDelegate
 
 - (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController {
-    [self showButton];
+    [self teardownPresentation];
 }
 
 @end
