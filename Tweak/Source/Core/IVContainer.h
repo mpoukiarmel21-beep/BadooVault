@@ -41,6 +41,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// NSTimeZone spoofing + the display-only model number suffix. nil == no override.
 @property (nonatomic, copy, nullable) NSString *regionCountry;
 
+/// Absolute path to a per-container video the virtual camera feeds into Badoo's
+/// native capture pipeline (photo/pose verification, profile capture). nil == no
+/// virtual camera; Badoo sees the real camera. The file lives OUTSIDE any
+/// redirected container view (under the shared control dir's Cameras/), so Badoo
+/// never enumerates it; it is resolved canonically per cid by IVPaths and wiped
+/// when the container is deleted. Set/cleared via IVContainerStore.
+@property (nonatomic, copy, nullable) NSString *cameraVideoPath;
+
 @property (nonatomic, strong) NSDate *createdAt;
 @property (nonatomic, strong, nullable) NSDate *lastUsedAt;
 

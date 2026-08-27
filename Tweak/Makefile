@@ -20,6 +20,7 @@ BadooVault_FILES = \
 	Source/Isolation/IVPrefsHook.m \
 	Source/Isolation/IVAppGroupHook.m \
 	Source/Isolation/IVHardening.m \
+	Source/Isolation/IVCameraHook.m \
 	Source/Spoof/IVDeviceSpoof.m \
 	Source/Spoof/IVDeviceIdentity.m \
 	Source/Spoof/IVLocaleSpoof.m \
@@ -43,6 +44,6 @@ BadooVault_CFLAGS = -fobjc-arc \
 	-Wno-deprecated-declarations -Wno-unused-variable \
 	-Wno-error=unguarded-availability-new
 
-BadooVault_FRAMEWORKS = UIKit CoreLocation MapKit Security
+BadooVault_FRAMEWORKS = UIKit CoreLocation MapKit Security AVFoundation CoreMedia CoreVideo CoreImage PhotosUI
 
 include $(THEOS_MAKE_PATH)/library.mk

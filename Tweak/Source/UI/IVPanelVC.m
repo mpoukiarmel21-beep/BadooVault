@@ -9,6 +9,8 @@
 #import "../Spoof/IVDeviceSpoof.h"
 #import "../Spoof/IVDeviceIdentity.h"
 #import "../Spoof/IVLocaleSpoof.h"
+#import "../Core/IVPaths.h"
+#import <PhotosUI/PhotosUI.h>
 
 // Le conteneur actif n'est appliqué qu'UNE fois, au lancement (redirections
 // HOME/keychain/prefs + spoof device/locale dans le constructeur). Basculer de
@@ -40,9 +42,10 @@ static void IVCloseAppForSwitch(void) {
                    dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ exit(0); });
 }
 
-@interface IVPanelVC () <UITableViewDataSource, UITableViewDelegate>
+@interface IVPanelVC () <UITableViewDataSource, UITableViewDelegate, PHPickerViewControllerDelegate>
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, copy) NSArray<IVContainer *> *items;
+@property (nonatomic, strong, nullable) IVContainer *pendingCameraContainer;
 @end
 
 @implementation IVPanelVC
@@ -246,6 +249,17 @@ static void IVCloseAppForSwitch(void) {
                                             symbol:@"gearshape"
                                              style:IVActionStyleDefault
                                            handler:^{ [ws showSettingsFor:c]; }]];
+        BOOL hasVideo = c.cameraVideoPath.length > 0;
+        [sheet addAction:[IVAction actionWithTitle:(hasVideo ? @"Caméra : vidéo définie ✓" : @"Caméra (vidéo de vérif)")
+                                            symbol:@"video.circle"
+                                             style:IVActionStyleDefault
+                                           handler:^{ [ws showCameraFor:c]; }]];
+        if (hasVideo) {
+            [sheet addAction:[IVAction actionWithTitle:@"Retirer la vidéo caméra"
+                                                symbol:@"video.slash"
+                                                 style:IVActionStyleDefault
+                                               handler:^{ [ws removeCameraFor:c]; }]];
+        }
         [sheet addAction:[IVAction actionWithTitle:@"Renommer"
                                             symbol:@"pencil"
                                              style:IVActionStyleDefault
@@ -419,6 +433,74 @@ static void IVCloseAppForSwitch(void) {
         [ws reload];
     }];
     [self.navigationController pushViewController:p animated:YES];
+}
+
+#pragma mark - Caméra virtuelle (vidéo de vérification)
+
+// Per-container virtual camera: the user picks ONE video that will feed Badoo's
+// OWN native capture pipeline during photo/pose verification on this container.
+// PHPickerViewController runs out-of-process (no photo-library permission prompt).
+- (void)showCameraFor:(IVContainer *)c {
+    if (!c) return;
+    if (@available(iOS 14.0, *)) {
+        self.pendingCameraContainer = c;
+        PHPickerConfiguration *cfg = [[PHPickerConfiguration alloc] init];
+        cfg.filter = [PHPickerFilter videosFilter];
+        cfg.selectionLimit = 1;
+        PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:cfg];
+        picker.delegate = self;
+        picker.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        [self presentViewController:picker animated:YES completion:nil];
+    } else {
+        [self warn:@"Indisponible" msg:@"La sélection de vidéo nécessite iOS 14 ou plus récent."];
+    }
+}
+
+- (void)removeCameraFor:(IVContainer *)c {
+    if (!c) return;
+    if ([[IVContainerStore shared] setCameraVideoPath:nil forContainer:c]) {
+        [IVPaths removeCameraVideoForCID:c.cid];
+        [self reload];
+    } else {
+        [self warn:@"Échec" msg:@"Impossible de retirer la vidéo (écriture disque échouée)."];
+    }
+}
+
+- (void)picker:(PHPickerViewController *)picker
+    didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14.0)) {
+    [picker dismissViewControllerAnimated:YES completion:nil];
+    IVContainer *c = self.pendingCameraContainer;
+    self.pendingCameraContainer = nil;
+    if (!c || results.count == 0) return;
+
+    NSItemProvider *provider = results.firstObject.itemProvider;
+    if (![provider hasItemConformingToTypeIdentifier:@"public.movie"]) {
+        [self warn:@"Format non pris en charge" msg:@"Choisis une vidéo (.mov ou .mp4)."];
+        return;
+    }
+    // The vended file URL is valid ONLY for the duration of this completion block,
+    // so we import (copy into the control dir) synchronously here, then hop to the
+    // main queue for the store mutation + UI refresh.
+    [provider loadFileRepresentationForTypeIdentifier:@"public.movie"
+                                    completionHandler:^(NSURL *url, NSError *error) {
+        BOOL imported = (url != nil) && [IVPaths importCameraVideoFromURL:url forCID:c.cid];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!imported) {
+                [self warn:@"Import échoué" msg:@"La vidéo n'a pas pu être copiée. Réessaie."];
+                return;
+            }
+            NSString *dst = [IVPaths cameraVideoPathForCID:c.cid];
+            if ([[IVContainerStore shared] setCameraVideoPath:dst forContainer:c]) {
+                [self reload];
+                [self warn:@"Vidéo enregistrée"
+                       msg:@"Elle alimentera la caméra native de Badoo lors de la vérification, sur "
+                           @"ce conteneur. Redémarre l'app pour l'activer."];
+            } else {
+                [IVPaths removeCameraVideoForCID:c.cid];
+                [self warn:@"Échec" msg:@"Impossible d'enregistrer le chemin de la vidéo."];
+            }
+        });
+    }];
 }
 
 - (void)createNew {

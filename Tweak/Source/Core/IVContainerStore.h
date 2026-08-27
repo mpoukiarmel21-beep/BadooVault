@@ -78,6 +78,12 @@ extern NSString *const kIVActiveChanged;       // active container changed
                 region:(nullable NSString *)region
           forContainer:(IVContainer *)c;
 
+/// Set (or clear, with nil) the per-container virtual-camera video path and
+/// persist. The path must already point to an imported canonical file
+/// (IVPaths importCameraVideoFromURL:forCID:). Returns NO (and reverts in memory)
+/// on persistence failure.
+- (BOOL)setCameraVideoPath:(nullable NSString *)path forContainer:(IVContainer *)c;
+
 /// Global reset: delete every non-default container's data + clear the list to
 /// just the default. Returns NO + logs on failure.
 - (BOOL)resetAll;

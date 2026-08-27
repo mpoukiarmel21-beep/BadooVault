@@ -311,6 +311,21 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
     return YES;
 }
 
+- (BOOL)setCameraVideoPath:(NSString *)path forContainer:(IVContainer *)c {
+    [_lock lock];
+    @try {
+        NSString *pPath = c.cameraVideoPath;
+        c.cameraVideoPath = path;
+        if (![self persistLocked]) {
+            c.cameraVideoPath = pPath;   // roll back
+            IVErr(@"setCameraVideoPath: persist failed for %@ — rolled back", c.cid);
+            return NO;
+        }
+    } @finally { [_lock unlock]; }
+    [self postOnMain:kIVContainersChanged];
+    return YES;
+}
+
 - (BOOL)resetAll {
     BOOL ok = YES;
     BOOL persisted = NO;
@@ -398,6 +413,11 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
     // deleted container's credentials would linger in the shared keychain and a
     // future container that happened to reuse the cid could inherit them.
     [IVKeychainHook purgeItemsWithPrefix:IVKeychainPrefixForCID(cid)];
+    // And its virtual-camera video, which lives under the shared control dir
+    // (Documents/BadooVault/Cameras/<cid>.mov) — OUTSIDE the container root removed
+    // above — so it must be deleted explicitly or it would orphan and a cid reuse
+    // could inherit it.
+    [IVPaths removeCameraVideoForCID:cid];
     return ok;
 }
 

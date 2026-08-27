@@ -54,6 +54,25 @@ NS_ASSUME_NONNULL_BEGIN
 /// surface existed but could not be removed.
 + (BOOL)wipeRealSessionFiles;
 
+/// <controlDir>/Cameras  (per-container virtual-camera videos; created on demand,
+/// lock-readable). Lives under the shared control dir — OUTSIDE any redirected
+/// container HOME — so Badoo never enumerates the video from inside its sandbox.
++ (NSString *)cameraDir;
+
+/// <controlDir>/Cameras/<cid>.mov — the canonical per-container video path fed to
+/// the virtual camera. Derived from cid; stable across HOME redirects.
++ (NSString *)cameraVideoPathForCID:(NSString *)cid;
+
+/// Copy `src` (a picker temp URL, valid only synchronously) to the canonical
+/// per-cid camera path, replacing any existing video, then stamp it lock-readable.
+/// MUST be called synchronously inside the picker completion block. Returns NO +
+/// logs on failure (leaves no partial file).
++ (BOOL)importCameraVideoFromURL:(NSURL *)src forCID:(NSString *)cid;
+
+/// Delete the per-cid camera video (no-op if absent). Called when a container is
+/// removed or its video is cleared.
++ (void)removeCameraVideoForCID:(NSString *)cid;
+
 @end
 
 NS_ASSUME_NONNULL_END

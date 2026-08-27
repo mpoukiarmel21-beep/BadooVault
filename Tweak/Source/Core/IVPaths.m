@@ -207,4 +207,68 @@ static void IVApplyProtection(NSString *path) {
     return ok;
 }
 
+#pragma mark - Virtual-camera per-container videos
+
++ (NSString *)cameraDir {
+    NSString *dir = [[self controlDir] stringByAppendingPathComponent:@"Cameras"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:dir]) {
+        NSError *err = nil;
+        if (![fm createDirectoryAtPath:dir withIntermediateDirectories:YES
+                            attributes:@{ NSFileProtectionKey: kIVFileProtection } error:&err]) {
+            IVErr(@"cameraDir create failed: %@", err);
+        }
+    } else {
+        IVApplyProtection(dir);
+    }
+    return dir;
+}
+
++ (NSString *)cameraVideoPathForCID:(NSString *)cid {
+    if (!cid.length) return nil;
+    NSString *file = [cid stringByAppendingPathExtension:@"mov"];
+    return [[self cameraDir] stringByAppendingPathComponent:file];
+}
+
++ (BOOL)importCameraVideoFromURL:(NSURL *)src forCID:(NSString *)cid {
+    if (!src || !cid.length) return NO;
+    NSString *dst = [self cameraVideoPathForCID:cid];
+    if (!dst.length) return NO;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSError *err = nil;
+
+    // Replace any existing video atomically-ish: remove the old, then copy the new.
+    if ([fm fileExistsAtPath:dst]) {
+        if (![fm removeItemAtPath:dst error:&err]) {
+            IVErr(@"importCameraVideo: failed to remove existing %@: %@", dst, err);
+            return NO;
+        }
+    }
+    // The picker's file representation URL is valid only during the completion
+    // block, so this MUST run synchronously there. copyItemAtURL faithfully
+    // duplicates the movie container.
+    if (![fm copyItemAtURL:src toURL:[NSURL fileURLWithPath:dst] error:&err]) {
+        IVErr(@"importCameraVideo: copy failed %@ -> %@: %@", src.path, dst, err);
+        // Leave no partial file behind.
+        [fm removeItemAtPath:dst error:NULL];
+        return NO;
+    }
+    IVApplyProtection(dst);
+    IVLog(@"importCameraVideo: stored video for %@ (%llu bytes)", cid,
+          (unsigned long long)[[fm attributesOfItemAtPath:dst error:NULL] fileSize]);
+    return YES;
+}
+
++ (void)removeCameraVideoForCID:(NSString *)cid {
+    NSString *dst = [self cameraVideoPathForCID:cid];
+    if (!dst.length) return;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if ([fm fileExistsAtPath:dst]) {
+        NSError *err = nil;
+        if (![fm removeItemAtPath:dst error:&err]) {
+            IVErr(@"removeCameraVideo: failed to remove %@: %@", dst, err);
+        }
+    }
+}
+
 @end

@@ -39,6 +39,7 @@ NSString *const kIVDefaultCID = @"default";
         _iosVersion = [dict[@"iosVersion"] isKindOfClass:[NSString class]] ? [dict[@"iosVersion"] copy] : nil;
         _appLanguage = [dict[@"appLanguage"] isKindOfClass:[NSString class]] ? [dict[@"appLanguage"] copy] : nil;
         _regionCountry = [dict[@"regionCountry"] isKindOfClass:[NSString class]] ? [dict[@"regionCountry"] copy] : nil;
+        _cameraVideoPath = [dict[@"cameraVideoPath"] isKindOfClass:[NSString class]] ? [dict[@"cameraVideoPath"] copy] : nil;
         _createdAt = [dict[@"createdAt"] isKindOfClass:[NSDate class]] ? dict[@"createdAt"] : [NSDate date];
         _lastUsedAt = [dict[@"lastUsedAt"] isKindOfClass:[NSDate class]] ? dict[@"lastUsedAt"] : nil;
     }
@@ -58,6 +59,7 @@ NSString *const kIVDefaultCID = @"default";
     if (self.iosVersion) d[@"iosVersion"] = self.iosVersion;
     if (self.appLanguage) d[@"appLanguage"] = self.appLanguage;
     if (self.regionCountry) d[@"regionCountry"] = self.regionCountry;
+    if (self.cameraVideoPath) d[@"cameraVideoPath"] = self.cameraVideoPath;
     d[@"createdAt"] = self.createdAt ?: [NSDate date];
     if (self.lastUsedAt) d[@"lastUsedAt"] = self.lastUsedAt;
     return [d copy];
