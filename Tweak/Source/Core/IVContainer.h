@@ -49,6 +49,21 @@ NS_ASSUME_NONNULL_BEGIN
 /// when the container is deleted. Set/cleared via IVContainerStore.
 @property (nonatomic, copy, nullable) NSString *cameraVideoPath;
 
+/// Auto-swipe (per-container bot). Drives Badoo's OWN on-screen UI while this
+/// container is active and in the foreground: likes cards, detects the "c'est un
+/// match" popup, and auto-sends one of the phrases below. Best-effort heuristic
+/// (no Badoo private headers) — see IVAutoSwipe.
+///
+/// autoSwipeEnabled only marks the container as CONFIGURED (lights the row icon);
+/// the engine is started explicitly from the config panel, never silently at
+/// launch. Delays are randomized in [min,max] seconds between actions to avoid a
+/// robotic, ban-prone cadence. autoSwipeCount == 0 means "no limit".
+@property (nonatomic, assign) BOOL autoSwipeEnabled;
+@property (nonatomic, copy, nullable) NSArray<NSString *> *autoSwipeMessages;
+@property (nonatomic, assign) NSInteger autoSwipeCount;   // 0 == illimité
+@property (nonatomic, assign) double autoSwipeMinDelay;   // seconds, >= 1
+@property (nonatomic, assign) double autoSwipeMaxDelay;   // seconds, >= min
+
 @property (nonatomic, strong) NSDate *createdAt;
 @property (nonatomic, strong, nullable) NSDate *lastUsedAt;
 

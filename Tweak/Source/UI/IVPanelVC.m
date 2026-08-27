@@ -10,37 +10,10 @@
 #import "../Spoof/IVDeviceIdentity.h"
 #import "../Spoof/IVLocaleSpoof.h"
 #import "../Core/IVPaths.h"
+#import "../Util/IVAppRelaunch.h"
+#import "../Util/IVAutoSwipe.h"
+#import "IVAutoSwipeVC.h"
 #import <PhotosUI/PhotosUI.h>
-
-// Le conteneur actif n'est appliqué qu'UNE fois, au lancement (redirections
-// HOME/keychain/prefs + spoof device/locale dans le constructeur). Basculer de
-// conteneur exige donc un vrai redémarrage du process. iOS n'autorise pas une
-// app à se relancer elle-même : on la met en arrière-plan (animation « home »
-// pour ne pas ressembler à un crash) puis on quitte proprement ; il suffit de
-// rouvrir l'app pour qu'elle démarre sur le conteneur fraîchement activé.
-static void IVCloseAppForSwitch(void) {
-    UIApplication *app = UIApplication.sharedApplication;
-    SEL suspend = NSSelectorFromString(@"suspend");
-    if ([app respondsToSelector:suspend]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [app performSelector:suspend];   // animate to home first (not a crash)
-#pragma clang diagnostic pop
-    }
-    // Terminate so the NEXT open cold-launches on the freshly activated container.
-    // The exit MUST NOT ride the main queue: once -suspend moves the app to the
-    // background the main run loop stops being serviced, so a main-queue
-    // dispatch_after may NEVER fire — the process is then left merely SUSPENDED
-    // (resumable from the app switcher). A warm resume does not re-run the
-    // constructor, so it reuses the OLD container's isolation while the store
-    // already points at the newly activated one — surfacing the account on the
-    // wrong (often default) identity. A background global-queue timer still runs
-    // during the brief pre-suspension grace window; and even if the OS freezes it
-    // first, Bootstrap's foreground stale-guard terminates the stale process on
-    // the next resume, so the switch can never silently fail.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ exit(0); });
-}
 
 @interface IVPanelVC () <UITableViewDataSource, UITableViewDelegate, PHPickerViewControllerDelegate>
 @property (nonatomic, strong) UITableView *table;
@@ -168,22 +141,25 @@ static void IVCloseAppForSwitch(void) {
     cell.selectedBackgroundView = sel;
 
     cell.tintColor = IVTheme.accent;
-    // Affordance de fin de ligne : une épingle de localisation (fake GPS) sur
-    // CHAQUE conteneur — accent dès qu'une localisation est posée. L'identité
-    // device et la langue/région (réglages plus rares) ont migré dans la feuille
-    // d'actions ouverte au tap sur la ligne, pour désencombrer la fin de ligne et
-    // agrandir l'unique action rapide qui y reste.
+    // Affordances de fin de ligne : des icônes explicites POSÉES sur chaque
+    // conteneur (appareil · localisation · caméra de vérif · auto-swipe), pour
+    // que chaque réglage soit à un tap sans ouvrir de menu. Le conteneur par
+    // défaut (compte réel) ne porte que l'épingle GPS. Le tap sur la ligne ouvre
+    // la feuille d'actions (activer / langue & région / renommer / supprimer).
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = [self trailingControlsForRow:ip.row];
     return cell;
 }
 
-// The cell's accessoryView: a single, comfortably-sized fake-GPS pin on EVERY
-// container (accent once a location is set). Device identity and language/region —
-// rarer, per-container settings — moved off the row into the tap action sheet
-// (presentActionsFor:), decluttering the trailing edge and enlarging the one quick
-// action that stays. The button carries the row index in its tag so the handler
-// resolves the container at tap time (self.items stays in sync across reloads).
+// The cell's accessoryView: explicit quick-action icons ON the row itself, so the
+// per-container settings are one tap away without opening a menu (the user asked to
+// bring the icons back — "remets les icônes ... c'est beaucoup plus simple"). The
+// DEFAULT (real) container only carries the fake-GPS pin; a real container has no
+// spoofed device / verification camera / auto-swipe to configure. Each NON-default
+// row shows four glyphs — appareil, localisation, caméra de vérif, auto-swipe —
+// tinted accent once that feature is configured, neutral otherwise. Each button
+// carries the row index in its tag so the handler resolves the container at tap
+// time (self.items stays in sync across reloads).
 - (nullable UIView *)trailingControlsForRow:(NSInteger)row {
     if (row < 0 || row >= (NSInteger)self.items.count) return nil;
     IVContainer *c = self.items[row];
@@ -192,16 +168,42 @@ static void IVCloseAppForSwitch(void) {
     UIButton *pin = [self glyphButton:(loc ? @"mappin.circle.fill" : @"mappin.and.ellipse")
                                   row:row action:@selector(editLocationFromControl:)
                                  tint:(loc ? IVTheme.accent : IVTheme.secondaryText)];
-    const CGFloat size = 40.0;
-    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, size, size)];
-    pin.frame = CGRectMake(0, 0, size, size);
-    [wrap addSubview:pin];
+
+    // Default container (real account): fake GPS only, comfortably sized.
+    if (c.isDefault) {
+        const CGFloat size = 40.0;
+        UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, size, size)];
+        pin.frame = CGRectMake(0, 0, size, size);
+        [wrap addSubview:pin];
+        return wrap;
+    }
+
+    // Non-default: appareil · localisation · caméra · auto-swipe.
+    BOOL hasVideo = c.cameraVideoPath.length > 0;
+    BOOL swipeOn = c.autoSwipeEnabled;
+    UIButton *dev = [self glyphButton:@"iphone"
+                                  row:row action:@selector(deviceInfoFromControl:)
+                                 tint:IVTheme.secondaryText];
+    UIButton *cam = [self glyphButton:(hasVideo ? @"video.fill" : @"video")
+                                  row:row action:@selector(cameraFromControl:)
+                                 tint:(hasVideo ? IVTheme.accent : IVTheme.secondaryText)];
+    UIButton *swipe = [self glyphButton:(swipeOn ? @"hand.draw.fill" : @"hand.draw")
+                                    row:row action:@selector(autoSwipeFromControl:)
+                                   tint:(swipeOn ? IVTheme.accent : IVTheme.secondaryText)];
+
+    NSArray<UIButton *> *buttons = @[ dev, pin, cam, swipe ];
+    const CGFloat bw = 34.0, bh = 40.0;
+    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, bw * buttons.count, bh)];
+    [buttons enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
+        b.frame = CGRectMake(bw * i, 0, bw, bh);
+        [wrap addSubview:b];
+    }];
     return wrap;
 }
 
 - (UIButton *)glyphButton:(NSString *)symbol row:(NSInteger)row action:(SEL)action tint:(UIColor *)tint {
     UIImageSymbolConfiguration *cfg =
-        [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
+        [UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIImageSymbolWeightRegular];
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     [b setImage:[UIImage systemImageNamed:symbol withConfiguration:cfg] forState:UIControlStateNormal];
     b.tintColor = tint;
@@ -241,25 +243,12 @@ static void IVCloseAppForSwitch(void) {
                                            handler:^{ [ws activate:c]; }]];
     }
     if (!c.isDefault) {
-        [sheet addAction:[IVAction actionWithTitle:@"Appareil (modèle, iOS)"
-                                            symbol:@"iphone"
-                                             style:IVActionStyleDefault
-                                           handler:^{ [ws showDeviceInfoFor:c]; }]];
+        // Appareil, caméra et auto-swipe ont leurs icônes directes sur la ligne ;
+        // ne restent ici que les réglages sans icône dédiée + renommer / supprimer.
         [sheet addAction:[IVAction actionWithTitle:@"Langue & région"
                                             symbol:@"gearshape"
                                              style:IVActionStyleDefault
                                            handler:^{ [ws showSettingsFor:c]; }]];
-        BOOL hasVideo = c.cameraVideoPath.length > 0;
-        [sheet addAction:[IVAction actionWithTitle:(hasVideo ? @"Caméra : vidéo définie ✓" : @"Caméra (vidéo de vérif)")
-                                            symbol:@"video.circle"
-                                             style:IVActionStyleDefault
-                                           handler:^{ [ws showCameraFor:c]; }]];
-        if (hasVideo) {
-            [sheet addAction:[IVAction actionWithTitle:@"Retirer la vidéo caméra"
-                                                symbol:@"video.slash"
-                                                 style:IVActionStyleDefault
-                                               handler:^{ [ws removeCameraFor:c]; }]];
-        }
         [sheet addAction:[IVAction actionWithTitle:@"Renommer"
                                             symbol:@"pencil"
                                              style:IVActionStyleDefault
@@ -287,7 +276,7 @@ static void IVCloseAppForSwitch(void) {
     a.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [self presentViewController:a animated:YES completion:^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.4 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ IVCloseAppForSwitch(); });
+                       dispatch_get_main_queue(), ^{ IVCloseAppForRelaunch(); });
     }];
 }
 
@@ -301,6 +290,50 @@ static void IVCloseAppForSwitch(void) {
     __weak typeof(self) ws = self;
     map.onCommit = ^(CLLocationCoordinate2D coord, NSString *name) { [ws reload]; };
     [self.navigationController pushViewController:map animated:YES];
+}
+
+#pragma mark - Row icon handlers (device · caméra · auto-swipe)
+
+// "Téléphone" : ouvre la fiche appareil (modèle, iOS, série — lecture seule).
+- (void)deviceInfoFromControl:(UIButton *)sender {
+    IVContainer *c = [self containerForControl:sender];
+    if (c) [self showDeviceInfoFor:c];
+}
+
+// "Vérif" : si une vidéo caméra est déjà définie, propose de la changer ou de la
+// retirer ; sinon ouvre directement le sélecteur de vidéo.
+- (void)cameraFromControl:(UIButton *)sender {
+    IVContainer *c = [self containerForControl:sender];
+    if (!c) return;
+    if (c.cameraVideoPath.length == 0) { [self showCameraFor:c]; return; }
+    __weak typeof(self) ws = self;
+    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:c.name
+                                                        message:@"Vidéo de vérification définie ✓"];
+    [sheet addAction:[IVAction actionWithTitle:@"Changer la vidéo"
+                                        symbol:@"video.badge.plus"
+                                         style:IVActionStyleDefault
+                                       handler:^{ [ws showCameraFor:c]; }]];
+    [sheet addAction:[IVAction actionWithTitle:@"Retirer la vidéo"
+                                        symbol:@"video.slash"
+                                         style:IVActionStyleDestructive
+                                       handler:^{ [ws removeCameraFor:c]; }]];
+    [sheet presentFrom:self];
+}
+
+// "Auto-swipe" : ouvre le panneau de configuration du bot pour ce conteneur.
+- (void)autoSwipeFromControl:(UIButton *)sender {
+    IVContainer *c = [self containerForControl:sender];
+    if (c) [self showAutoSwipeFor:c];
+}
+
+// Panneau de configuration de l'auto-swipe, poussé sur la pile de navigation (comme
+// le sélecteur de langue / la carte). Le panneau gère lui-même « Enregistrer » /
+// « Démarrer » : démarrer ferme tout le panneau pour laisser l'UI de Badoo au premier
+// plan, seule surface que le bot pilote.
+- (void)showAutoSwipeFor:(IVContainer *)c {
+    if (!c) return;
+    IVAutoSwipeVC *vc = [[IVAutoSwipeVC alloc] initWithContainer:c];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)rename:(IVContainer *)c {
@@ -535,7 +568,7 @@ static void IVCloseAppForSwitch(void) {
                 [done addAction:[UIAlertAction actionWithTitle:@"Fermer"
                                                          style:UIAlertActionStyleDefault
                                                        handler:^(UIAlertAction *y) {
-                    IVCloseAppForSwitch();
+                    IVCloseAppForRelaunch();
                 }]];
                 [self presentViewController:done animated:YES completion:nil];
             });

@@ -326,6 +326,38 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
     return YES;
 }
 
+- (BOOL)setAutoSwipeEnabled:(BOOL)enabled
+                   messages:(NSArray<NSString *> *)messages
+                      count:(NSInteger)count
+                   minDelay:(double)minDelay
+                   maxDelay:(double)maxDelay
+               forContainer:(IVContainer *)c {
+    [_lock lock];
+    @try {
+        BOOL pEnabled = c.autoSwipeEnabled;
+        NSArray<NSString *> *pMsgs = c.autoSwipeMessages;
+        NSInteger pCount = c.autoSwipeCount;
+        double pMin = c.autoSwipeMinDelay;
+        double pMax = c.autoSwipeMaxDelay;
+        c.autoSwipeEnabled = enabled;
+        c.autoSwipeMessages = messages.count ? [messages copy] : nil;
+        c.autoSwipeCount = count > 0 ? count : 0;
+        c.autoSwipeMinDelay = minDelay;
+        c.autoSwipeMaxDelay = maxDelay;
+        if (![self persistLocked]) {
+            c.autoSwipeEnabled = pEnabled;   // roll back every field
+            c.autoSwipeMessages = pMsgs;
+            c.autoSwipeCount = pCount;
+            c.autoSwipeMinDelay = pMin;
+            c.autoSwipeMaxDelay = pMax;
+            IVErr(@"setAutoSwipeEnabled: persist failed for %@ — rolled back", c.cid);
+            return NO;
+        }
+    } @finally { [_lock unlock]; }
+    [self postOnMain:kIVContainersChanged];
+    return YES;
+}
+
 - (BOOL)resetAll {
     BOOL ok = YES;
     BOOL persisted = NO;
