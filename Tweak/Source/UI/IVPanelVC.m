@@ -154,8 +154,8 @@ static void IVCloseAppForSwitch(void) {
     content.image = [UIImage systemImageNamed:active ? @"checkmark.circle.fill" : @"circle"];
     content.imageProperties.tintColor = active ? IVTheme.accent : IVTheme.secondaryText;
     content.imageProperties.preferredSymbolConfiguration =
-        [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightRegular];
-    content.imageToTextPadding = 12.0;
+        [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
+    content.imageToTextPadding = 10.0;
     cell.contentConfiguration = content;
 
     // Translucent-but-visible glass row over the dark surface.
@@ -165,49 +165,40 @@ static void IVCloseAppForSwitch(void) {
     cell.selectedBackgroundView = sel;
 
     cell.tintColor = IVTheme.accent;
-    // Affordances de fin de ligne : une épingle de localisation (fake GPS) sur
-    // CHAQUE conteneur, plus un glyphe iPhone (identité device) et un écrou
-    // (langue/région) sur les conteneurs isolés seulement — le conteneur par défaut
-    // reporte le vrai appareil. L'épingle passe en accent dès qu'une localisation
-    // est posée. Le tap sur la ligne ouvre toujours Activer / Renommer / …
+    // Affordance de fin de ligne : une épingle de localisation (fake GPS) sur
+    // CHAQUE conteneur — accent dès qu'une localisation est posée. L'identité
+    // device et la langue/région (réglages plus rares) ont migré dans la feuille
+    // d'actions ouverte au tap sur la ligne, pour désencombrer la fin de ligne et
+    // agrandir l'unique action rapide qui y reste.
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = [self trailingControlsForRow:ip.row];
     return cell;
 }
 
-// The cell's accessoryView: [ 📱 ⚙︎ 📍 ] for isolated containers, [ 📍 ] for the
-// default one. Each button carries the row index in its tag so the handler
+// The cell's accessoryView: a single, comfortably-sized fake-GPS pin on EVERY
+// container (accent once a location is set). Device identity and language/region —
+// rarer, per-container settings — moved off the row into the tap action sheet
+// (presentActionsFor:), decluttering the trailing edge and enlarging the one quick
+// action that stays. The button carries the row index in its tag so the handler
 // resolves the container at tap time (self.items stays in sync across reloads).
 - (nullable UIView *)trailingControlsForRow:(NSInteger)row {
     if (row < 0 || row >= (NSInteger)self.items.count) return nil;
     IVContainer *c = self.items[row];
 
-    NSMutableArray<UIButton *> *btns = [NSMutableArray new];
-    if (!c.isDefault) {
-        [btns addObject:[self glyphButton:@"iphone" row:row
-                                   action:@selector(showDeviceInfo:) tint:IVTheme.secondaryText]];
-        [btns addObject:[self glyphButton:@"gearshape" row:row
-                                   action:@selector(showSettings:) tint:IVTheme.secondaryText]];
-    }
-    // Fake GPS available on every container; accent once a location is set.
     BOOL loc = c.hasLocation;
-    [btns addObject:[self glyphButton:(loc ? @"mappin.circle.fill" : @"mappin.and.ellipse")
+    UIButton *pin = [self glyphButton:(loc ? @"mappin.circle.fill" : @"mappin.and.ellipse")
                                   row:row action:@selector(editLocationFromControl:)
-                                 tint:(loc ? IVTheme.accent : IVTheme.secondaryText)]];
-
-    const CGFloat size = 34.0, stride = 38.0;
-    CGFloat width = (btns.count - 1) * stride + size;
-    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, size)];
-    [btns enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
-        b.frame = CGRectMake(i * stride, 0, size, size);
-        [wrap addSubview:b];
-    }];
+                                 tint:(loc ? IVTheme.accent : IVTheme.secondaryText)];
+    const CGFloat size = 40.0;
+    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, size, size)];
+    pin.frame = CGRectMake(0, 0, size, size);
+    [wrap addSubview:pin];
     return wrap;
 }
 
 - (UIButton *)glyphButton:(NSString *)symbol row:(NSInteger)row action:(SEL)action tint:(UIColor *)tint {
     UIImageSymbolConfiguration *cfg =
-        [UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIImageSymbolWeightRegular];
+        [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     [b setImage:[UIImage systemImageNamed:symbol withConfiguration:cfg] forState:UIControlStateNormal];
     b.tintColor = tint;
@@ -247,6 +238,14 @@ static void IVCloseAppForSwitch(void) {
                                            handler:^{ [ws activate:c]; }]];
     }
     if (!c.isDefault) {
+        [sheet addAction:[IVAction actionWithTitle:@"Appareil (modèle, iOS)"
+                                            symbol:@"iphone"
+                                             style:IVActionStyleDefault
+                                           handler:^{ [ws showDeviceInfoFor:c]; }]];
+        [sheet addAction:[IVAction actionWithTitle:@"Langue & région"
+                                            symbol:@"gearshape"
+                                             style:IVActionStyleDefault
+                                           handler:^{ [ws showSettingsFor:c]; }]];
         [sheet addAction:[IVAction actionWithTitle:@"Renommer"
                                             symbol:@"pencil"
                                              style:IVActionStyleDefault
@@ -332,8 +331,7 @@ static void IVCloseAppForSwitch(void) {
 
 #pragma mark - Device info (read-only) + settings (language / region)
 
-- (void)showDeviceInfo:(UIButton *)sender {
-    IVContainer *c = [self containerForControl:sender];
+- (void)showDeviceInfoFor:(IVContainer *)c {
     if (!c) return;
     NSString *ident = [IVDeviceSpoof effectiveModelForContainer:c];
     NSString *marketing = [IVDeviceIdentity marketingNameForIdentifier:ident];
@@ -361,8 +359,7 @@ static void IVCloseAppForSwitch(void) {
     [self presentViewController:a animated:YES completion:nil];
 }
 
-- (void)showSettings:(UIButton *)sender {
-    IVContainer *c = [self containerForControl:sender];
+- (void)showSettingsFor:(IVContainer *)c {
     if (!c) return;
     __weak typeof(self) ws = self;
 

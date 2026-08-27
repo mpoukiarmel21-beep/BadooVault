@@ -6,6 +6,7 @@
 #import <UIKit/UIKit.h>
 #import <sys/utsname.h>
 #import <sys/sysctl.h>
+#import <sys/time.h>
 #import <objc/runtime.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <dlfcn.h>
@@ -73,6 +74,19 @@ static int (*orig_uname)(struct utsname *) = NULL;
 static CFPropertyListRef (*orig_MGCopyAnswer)(CFStringRef) = NULL;
 static void *(*orig_dlsym)(void *, const char *) = NULL;
 
+// kern.boottime spoof (P4) — the boot timestamp is a device-GLOBAL constant: every
+// app and every container on one physical handset reads the identical value, so an
+// unspoofed boottime is a direct "many accounts, one phone" correlation key that
+// survives all four storage redirects. We shift it per-cid to a stable earlier
+// instant (deterministic, 1..5 days back) so two containers disagree. The paired
+// NSProcessInfo.systemUptime swizzle adds the SAME offset to the monotonic uptime,
+// keeping (wall_now - boottime) ≈ systemUptime — an inconsistency between the two
+// would itself be a tamper tell. Populated only for isolated containers.
+static struct timeval gSpoofedBoottime = {0, 0};
+static BOOL gHasBoottime = NO;
+static NSTimeInterval gUptimeAdd = 0;         // seconds added to the real uptime
+static IMP gOrigSystemUptimeIMP = NULL;       // original -[NSProcessInfo systemUptime]
+
 @implementation IVDeviceSpoof
 
 + (NSString *)effectiveModelForContainer:(IVContainer *)container {
@@ -98,6 +112,19 @@ static NSOperatingSystemVersion IVParseOSVersion(NSString *v) {
 #pragma mark - C-level hooks
 
 static int iv_sysctlbyname(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    // kern.boottime — a `struct timeval`, NOT a C string, so it gets its own copy
+    // path with the same size-query / EINVAL / ENOMEM / memcpy contract as the
+    // string keys below. Must precede the string resolution (different value type).
+    if (gHasBoottime && name && strcmp(name, "kern.boottime") == 0) {
+        size_t need = sizeof(gSpoofedBoottime);
+        if (!oldp) { if (oldlenp) *oldlenp = need; return 0; }        // size query
+        if (!oldlenp) { errno = EINVAL; return -1; }                 // buffer with no length
+        if (*oldlenp < need) { errno = ENOMEM; return -1; }          // caller's buffer too small
+        memcpy(oldp, &gSpoofedBoottime, need);
+        *oldlenp = need;
+        return 0;
+    }
+
     // Resolve the spoofed C string for the requested key (NULL == not spoofed).
     const char *spoof = NULL;
     if (name) {
@@ -135,6 +162,18 @@ static int iv_uname(struct utsname *u) {
 // returns the board id (e.g. "D79AP"), a different value we must NOT rewrite to
 // the marketing identifier or it would be internally inconsistent.
 static int iv_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    // Raw MIB path for kern.boottime: sysctl({CTL_KERN, KERN_BOOTTIME}). Mirrors the
+    // sysctlbyname("kern.boottime") struct-timeval spoof so a fingerprint library
+    // reading the numeric MIB sees the same shifted boot instant as the string API.
+    if (gHasBoottime && name && namelen >= 2 && name[0] == CTL_KERN && name[1] == KERN_BOOTTIME) {
+        size_t need = sizeof(gSpoofedBoottime);
+        if (!oldp) { if (oldlenp) *oldlenp = need; return 0; }        // size query
+        if (!oldlenp) { errno = EINVAL; return -1; }                 // buffer with no length
+        if (*oldlenp < need) { errno = ENOMEM; return -1; }          // caller's buffer too small
+        memcpy(oldp, &gSpoofedBoottime, need);
+        *oldlenp = need;
+        return 0;
+    }
     if (gSpoofedModelC && name && namelen >= 2 && name[0] == CTL_HW && name[1] == HW_MACHINE) {
         const char *spoof = gSpoofedModelC;
         size_t need = strlen(spoof) + 1;
@@ -227,6 +266,50 @@ static void IVInstallIOSVersionSpoof(void) {
     }
 }
 
+#pragma mark - Boot time spoof (P4)
+
+// Swizzled -[NSProcessInfo systemUptime]: the real uptime plus the per-cid offset,
+// so (wall_clock_now - spoofed_boottime) and systemUptime stay in agreement. A
+// disagreement between the two clocks would itself be a tamper tell. Falls back to
+// the raw uptime (offset 0) if the original IMP was never captured.
+static NSTimeInterval iv_systemUptime(id self, SEL _cmd) {
+    NSTimeInterval orig = gOrigSystemUptimeIMP
+        ? ((NSTimeInterval (*)(id, SEL))gOrigSystemUptimeIMP)(self, _cmd)
+        : 0;
+    return orig + gUptimeAdd;
+}
+
+// Capture the REAL boot time, then shift it a stable per-cid amount into the past
+// (1..5 days) and enable the spoof, bumping systemUptime by the same amount.
+// MUST be called BEFORE the fishhook rebind: sysctlbyname here has to reach the
+// genuine libc entry, not iv_sysctlbyname, or the read would recurse / self-spoof.
+static void IVInstallBoottimeSpoof(NSString *cid) {
+    struct timeval real = {0, 0};
+    size_t len = sizeof(real);
+    if (sysctlbyname("kern.boottime", &real, &len, NULL, 0) != 0 || real.tv_sec == 0) {
+        return;  // couldn't read the real boot time — leave boottime untouched
+    }
+
+    // Deterministic 1..5 day backward shift from SHA256(cid | "boottime-offset").
+    unsigned char h[CC_SHA256_DIGEST_LENGTH];
+    IVSeedBytes([NSString stringWithFormat:@"%@|boottime-offset", cid ?: @""], h);
+    uint32_t raw = ((uint32_t)h[0] << 24) | ((uint32_t)h[1] << 16) |
+                   ((uint32_t)h[2] << 8)  |  (uint32_t)h[3];
+    NSTimeInterval offset = (NSTimeInterval)(raw % 432000);   // 0 .. 5 days (seconds)
+    if (offset < 86400) offset += 86400;                      // force ≥ 1 day back
+
+    gSpoofedBoottime = real;
+    gSpoofedBoottime.tv_sec = real.tv_sec - (time_t)offset;   // boot instant, earlier
+    gUptimeAdd = offset;                                      // uptime grows to match
+    gHasBoottime = YES;
+
+    Method m = class_getInstanceMethod([NSProcessInfo class], @selector(systemUptime));
+    if (m) {
+        IMP prev = method_setImplementation(m, (IMP)iv_systemUptime);
+        if (!gOrigSystemUptimeIMP) gOrigSystemUptimeIMP = prev;  // never capture our thunk
+    }
+}
+
 #pragma mark - Install
 
 + (void)installForContainer:(IVContainer *)container {
@@ -240,6 +323,11 @@ static void IVInstallIOSVersionSpoof(void) {
     gSpoofedModelC = strdup(gSpoofedModel.UTF8String);
     gVendorUUID = [IVSeededUUID(container.cid, @"idfv").UUIDString copy];
     gAdvUUID = [IVSeededUUID(container.cid, @"idfa").UUIDString copy];
+
+    // Per-cid kern.boottime shift (P4). Installed here — BEFORE the fishhook rebind
+    // below — so its internal sysctlbyname("kern.boottime") read reaches the real
+    // libc entry and captures the genuine boot instant, not our own hook.
+    IVInstallBoottimeSpoof(container.cid);
 
     // MobileGestalt identity whitelist (P3). ProductType MUST equal the spoofed
     // hw.machine model, or the two disagree and betray the spoof. SerialNumber is
@@ -316,9 +404,10 @@ static void IVInstallIOSVersionSpoof(void) {
     // Drop the MobileGestalt pair if we could not resolve the original.
     unsigned count = orig_MGCopyAnswer ? (sizeof(r) / sizeof(r[0])) : 3;
     int rc = rebind_symbols(r, count);
-    IVLog(@"DeviceSpoof: model=%@ ios=%@ (build %@) idfv=%@ udid=%@ mg=%d rc=%d",
+    IVLog(@"DeviceSpoof: model=%@ ios=%@ (build %@) idfv=%@ udid=%@ mg=%d boot=%d(-%.1fd) rc=%d",
           gSpoofedModel, gSpoofedIOSVersion ?: @"real", gSpoofedBuild ?: @"-",
-          gVendorUUID, gGestaltSpoof[@"UniqueDeviceID"], (orig_MGCopyAnswer != NULL), rc);
+          gVendorUUID, gGestaltSpoof[@"UniqueDeviceID"], (orig_MGCopyAnswer != NULL),
+          gHasBoottime, gUptimeAdd / 86400.0, rc);
 }
 
 @end

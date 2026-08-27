@@ -19,6 +19,7 @@ BadooVault_FILES = \
 	Source/Isolation/IVKeychainHook.m \
 	Source/Isolation/IVPrefsHook.m \
 	Source/Isolation/IVAppGroupHook.m \
+	Source/Isolation/IVHardening.m \
 	Source/Spoof/IVDeviceSpoof.m \
 	Source/Spoof/IVDeviceIdentity.m \
 	Source/Spoof/IVLocaleSpoof.m \

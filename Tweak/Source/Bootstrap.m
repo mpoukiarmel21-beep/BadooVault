@@ -6,6 +6,7 @@
 #import "Isolation/IVKeychainHook.h"
 #import "Isolation/IVPrefsHook.h"
 #import "Isolation/IVAppGroupHook.h"
+#import "Isolation/IVHardening.h"
 #import "Spoof/IVDeviceSpoof.h"
 #import "Spoof/IVDeviceIdentity.h"
 #import "Spoof/IVLocaleSpoof.h"
@@ -173,6 +174,14 @@ static void IVBootstrap(void) {
             // Locale/timezone spoof — same gate: only meaningful once files/keychain/
             // prefs are isolated. No-op when the container sets no language/region.
             [IVLocaleSpoof installForContainer:active];
+
+            // In-process anti-correlation hardening — neutralize the device-global,
+            // Apple-signed identity oracles that survive every redirect and answer
+            // identically on every container (DeviceCheck / App Attest, the prime
+            // "many accounts, one phone" ban signal), and suppress the AutoFill /
+            // QuickType credential strip that re-surfaced a previous container's
+            // email into a new container's signup field. Isolated containers only.
+            [IVHardening installForContainer:active];
 
             // Task C — permanent login persistence. Downgrade the whole container
             // tree to CompleteUntilFirstUserAuthentication NOW (catch any session
