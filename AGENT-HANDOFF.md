@@ -26,12 +26,14 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Personne. build-1 livré (CI verte). Créneau libre.
+Personne. build-2 livré (CI verte) : bouton flottant redesigné + tap réparé.
+Créneau libre.
 
 ## Prochaine étape
 
-**Valider le build-1 sur appareil** (Sideloadly, iOS 17+). L'IPA est prête :
-`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-1/BadooVault.ipa`
+**Valider le build-2 sur appareil** (Sideloadly, iOS 17+). Corrige le rapport
+« bouton tout blanc + rien ne se passe au tap ». IPA prête :
+`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-2/BadooVault.ipa`
 (81,8 Mo). Depuis Windows la CI ne fait que produire l'IPA ; l'install + le test
 multi-comptes sont manuels (côté humain).
 
@@ -43,6 +45,29 @@ multi-comptes sont manuels (côté humain).
 - `BPEPushNotificationService.appex` conservée telle quelle ; re-signée par Sideloadly.
 
 ## Journal
+
+### 2026-08-27 — Claude Code — build-2 : bouton flottant redesigné + tap réparé
+
+- Rapport appareil : « le bouton apparaît mais tout blanc et pas bien designé ;
+  au tap rien ne se passe ». Deux bugs corrigés dans
+  `Tweak/Source/UI/IVFloatingButton.m` (API publique `+shared/-show/-hide`
+  inchangée, changements internes uniquement).
+- **Blanc / mal designé** : le fond `UIGlassEffect` (via `IVGlass`) rendait
+  quasi-transparent/blanc sur certains builds et avait une taille ambiguë
+  (vue autolayout positionnée au frame). Remplacé par un disque violet
+  déterministe — `CAGradientLayer` accent→accentDeep en diagonale + gloss
+  spéculaire blanc en haut (α0.38→0) + liseré hairline 1pt, glow violet et
+  icône SF blanche conservés. Import `IVGlass.h` retiré (plus utilisé ici).
+- **Rien au tap** : présentation faite sur le top VC de Badoo → UIKit droppait
+  silencieusement quand ce VC était occupé. Désormais on présente sur notre
+  PROPRE fenêtre plein écran `IVPresentationWindow` (niveau `UIWindowLevelNormal+3`,
+  `initWithWindowScene:`, rootVC transparent, `makeKeyAndVisible`) : jamais
+  occupée → le tap ouvre toujours le menu. `teardownPresentation` (idempotent)
+  restaure le bouton et libère la fenêtre au close/swipe-dismiss.
+- Commit `5d71485` poussé sur `master`. Run CI `33076645591` (run #2) **success**
+  (1m50s). Release `build-2` + asset `BadooVault.ipa` (81 843 402 o) publié :
+  `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-2/BadooVault.ipa`
+- Reste : validation appareil (humain, Sideloadly).
 
 ### 2026-08-27 — Claude Code — build-1 CI VERTE, IPA publiée
 
