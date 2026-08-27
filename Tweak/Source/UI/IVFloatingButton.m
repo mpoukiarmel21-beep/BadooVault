@@ -267,10 +267,18 @@ static const CGFloat kIVPad = 18.0;   // shadow padding around the button
         }];
     }
 
-    // Full-screen transparent window that we own. initWithWindowScene sizes it to
-    // the scene automatically. It sits just above the app's normal content and
-    // below our button window, and hosts the page-sheet presentation.
+    // Full-screen transparent window that we own. It sits just above the app's
+    // normal content and below our button window, and hosts the page-sheet
+    // presentation.
     IVPresentationWindow *pw = [[IVPresentationWindow alloc] initWithWindowScene:scene];
+    // initWithWindowScene: does NOT size the window — it comes up at CGRectZero,
+    // so makeKeyAndVisible shows a 0x0 window and the page sheet presented from
+    // its rootVC has no room to draw. The present completion still fires, so the
+    // button hid itself while no menu was ever visible: the exact "le bouton
+    // disparaît" (dead tap) bug. Give it the scene's full bounds explicitly.
+    CGRect pwFrame = scene.coordinateSpace.bounds;
+    if (CGRectIsEmpty(pwFrame)) pwFrame = UIScreen.mainScreen.bounds;
+    pw.frame = pwFrame;
     pw.windowLevel = UIWindowLevelNormal + 3;
     pw.backgroundColor = UIColor.clearColor;
     UIViewController *host = [UIViewController new];

@@ -26,17 +26,17 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Personne. build-3 en cours de CI : Reset (réinitialisation) élargi pour vraiment
-déconnecter le compte réel Badoo + purge conteneur renforcée. Créneau libre après
-la CI verte.
+Personne. build-4 en cours de CI : correctif du tap mort du bouton flottant
+(« quand j'appuie dessus le bouton disparaît » — le menu n'apparaissait pas).
+Créneau libre après la CI verte.
 
 ## Prochaine étape
 
-**Valider build-3 sur appareil** (Sideloadly, iOS 17+). Corrige le rapport
-« quand je clique sur réinitialiser, le compte ne disparaît pas toujours » et
-« supprimer un conteneur doit effacer la totalité du cache + cookies + stockage
-sans impacter les autres ». Depuis Windows la CI ne fait que produire l'IPA ;
-l'install + le test multi-comptes restent manuels (côté humain).
+**Valider build-4 sur appareil** (Sideloadly, iOS 17+). Vérifie qu'un tap sur le
+bouton flottant OUVRE bien le menu de gestion des conteneurs (et que le bouton
+revient à la fermeture / au swipe). Puis re-valider le Reset élargi de build-3.
+Depuis Windows la CI ne fait que produire l'IPA ; l'install + le test restent
+manuels (côté humain).
 
 ## Blocages / risques
 
@@ -46,6 +46,32 @@ l'install + le test multi-comptes restent manuels (côté humain).
 - `BPEPushNotificationService.appex` conservée telle quelle ; re-signée par Sideloadly.
 
 ## Journal
+
+### 2026-08-27 — Claude Code — build-4 : bouton flottant, tap mort réparé
+
+Rapport appareil : « quand j'appuie dessus le bouton disparaît » — le tap faisait
+disparaître le bouton flottant mais le menu de gestion des conteneurs
+n'apparaissait pas (tap mort).
+
+Diagnostic : dans `IVFloatingButton.m -onTap`, la fenêtre de présentation
+`IVPresentationWindow` était créée par `initWithWindowScene:` **sans jamais fixer
+son `frame`**. Contrairement à ce que disait le commentaire, `initWithWindowScene:`
+ne dimensionne PAS la fenêtre : elle naît à `CGRectZero`. `makeKeyAndVisible`
+affichait donc une fenêtre 0×0, et la page-sheet présentée depuis son rootVC
+n'avait aucune place pour se dessiner. Le bloc de complétion du present se
+déclenchait quand même (le present « réussit »), donc le bouton se cachait
+(`ws.window.hidden = YES`) alors qu'aucun menu n'était visible → exactement le
+symptôme rapporté.
+
+Correctif (1 fichier, `Tweak/Source/UI/IVFloatingButton.m`, `-onTap` uniquement,
+API publique `+shared/-show/-hide` inchangée) : après l'init, on fixe
+explicitement `pw.frame = scene.coordinateSpace.bounds` (repli sur
+`UIScreen.mainScreen.bounds` si vide) avant `windowLevel`/`makeKeyAndVisible`. La
+fenêtre couvre alors toute la scène, la page-sheet s'affiche, et le bouton ne se
+cache que derrière un menu réellement présent. Commentaire trompeur corrigé.
+
+Reste : build CI + publication IPA build-4, puis validation appareil (humain).
+
 
 ### 2026-08-27 — Claude Code — build-3 : Reset déconnecte vraiment + purge conteneur renforcée
 
