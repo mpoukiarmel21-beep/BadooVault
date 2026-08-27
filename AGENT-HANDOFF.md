@@ -26,12 +26,14 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Claude Code — port initial + build-1 CI. Prise de main 2026-08-27.
+Personne. build-1 livré (CI verte). Créneau libre.
 
 ## Prochaine étape
 
-Valider le build-1 sur appareil (Sideloadly, appareil iOS 17+). Depuis Windows,
-la CI ne peut que produire l'IPA ; l'install + le test multi-comptes sont manuels.
+**Valider le build-1 sur appareil** (Sideloadly, iOS 17+). L'IPA est prête :
+`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-1/BadooVault.ipa`
+(81,8 Mo). Depuis Windows la CI ne fait que produire l'IPA ; l'install + le test
+multi-comptes sont manuels (côté humain).
 
 ## Blocages / risques
 
@@ -41,6 +43,16 @@ la CI ne peut que produire l'IPA ; l'install + le test multi-comptes sont manuel
 - `BPEPushNotificationService.appex` conservée telle quelle ; re-signée par Sideloadly.
 
 ## Journal
+
+### 2026-08-27 — Claude Code — build-1 CI VERTE, IPA publiée
+
+- Run `33073720990` **success** (2m14s). Release `build-1` créée, asset
+  `BadooVault.ipa` (81 842 479 o, sha256 5d3e0a1e…c4f2) uploadé.
+- URL : `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-1/BadooVault.ipa`
+- Recette CI clean confirmée fonctionnelle sur base propre `decrypt.day` : dylib
+  substrate-free buildée, injectée (`insert_dylib --strip-codesig`), re-signée ad-hoc,
+  re-zippée. Aucun bloc de tri de mods nécessaire (aucune dylib mod embarquée).
+- Reste : validation appareil (humain, Sideloadly).
 
 ### 2026-08-27 — Claude Code — Port initial BadooVault (build-1)
 
