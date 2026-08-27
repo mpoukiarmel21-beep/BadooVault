@@ -26,17 +26,18 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Personne. build-4 en cours de CI : correctif du tap mort du bouton flottant
-(« quand j'appuie dessus le bouton disparaît » — le menu n'apparaissait pas).
+Personne. build-5 en cours de CI : **refonte** de la présentation du bouton
+flottant (fenêtre unique persistante) pour tuer la série de bugs tap/menu.
 Créneau libre après la CI verte.
 
 ## Prochaine étape
 
-**Valider build-4 sur appareil** (Sideloadly, iOS 17+). Vérifie qu'un tap sur le
-bouton flottant OUVRE bien le menu de gestion des conteneurs (et que le bouton
-revient à la fermeture / au swipe). Puis re-valider le Reset élargi de build-3.
-Depuis Windows la CI ne fait que produire l'IPA ; l'install + le test restent
-manuels (côté humain).
+**Valider build-5 sur appareil** (Sideloadly, iOS 17+). Vérifie : (1) un tap sur
+le bouton flottant OUVRE le menu de gestion des conteneurs à chaque fois ; (2) le
+bouton revient bien à la fermeture (bouton Close) et au swipe-down ; (3) plus de
+« le bouton disparaît puis revient tout seul et le 2e tap ne fait rien ». Puis
+re-valider le Reset élargi de build-3. Depuis Windows la CI ne fait que produire
+l'IPA ; l'install + le test restent manuels (côté humain).
 
 ## Blocages / risques
 
@@ -47,7 +48,51 @@ manuels (côté humain).
 
 ## Journal
 
-### 2026-08-27 — Claude Code — build-4 : bouton flottant, tap mort réparé
+### 2026-08-27 — Claude Code — build-5 : refonte présentation bouton (fenêtre unique)
+
+Rapport appareil : « quand j'ai cliqué dessus, le bouton a disparu, ensuite c'est
+revenu quelques secondes [après] et quand je réplique dessus y a rien qui se
+passe, y a pas le menu qui s'affiche ». Troisième symptôme de la série tap/menu
+(après build-2 tap mort et build-4 fenêtre 0×0) → règle « échoué deux fois =
+changer d'approche » : on abandonne le patch incrémental et on refond la
+présentation.
+
+Diagnostic (cause racine, vérifiée dans le code) : l'ancienne archi à **deux
+fenêtres** (petite fenêtre-bouton `IVOverlayWindow` Alert+1 + fenêtre jetable
+`IVPresentationWindow` Normal+3 recréée à chaque tap) avait plusieurs coutures
+fragiles. Celle du rapport : `-[IVFloatingButton show]` est appelée à **chaque**
+`UIApplicationDidBecomeActive` (voir `Bootstrap.m:26`) et fait
+`if (self.window) { self.window.hidden = NO; return; }`. Présenter la feuille
+faisait re-déclencher un DidBecomeActive → `show` **ré-affichait le bouton tout
+seul** SANS passer par `teardownPresentation`, donc `presWindow`/`presentedNav`
+restaient non-nil → le garde d'entrée de `onTap` (`if (self.presWindow || …)
+return;`) bloquait tout tap suivant. D'où exactement « revient quelques secondes
+après, puis 2e tap mort ».
+
+Correctif (refonte de `Tweak/Source/UI/IVFloatingButton.m`, API publique
+`+shared/-show/-hide` inchangée ; 126 insertions / 145 suppressions) : **une seule
+fenêtre plein écran persistante**. `IVOverlayWindow` couvre toute la scène
+(`w.frame = scene.coordinateSpace.bounds`), transparente, `hitTest` en
+passthrough SAUF (a) le bouton et (b) quand le panneau est présenté (alors toute
+la fenêtre devient vivante pour que la feuille reçoive les touches). Le bouton
+n'est plus une fenêtre mais un **sous-vue** (`container`) du rootVC stable ; le
+panneau `IVPanelVC` est présenté sur CE rootVC (plus de 2e fenêtre à
+dimensionner/retenir/rendre key/fuiter). Le garde d'entrée lit désormais l'état
+UIKit **vivant** (`host.presentedViewController`) → il ne peut plus rester
+« collé ». Le bouton est masqué (`container.hidden = YES`) uniquement dans le
+completion du present (jamais avant → pas de bouton fantôme si le present
+échouait) et restauré dans `teardownPresentation` (idempotent). `show` ne touche
+plus JAMAIS la visibilité du bouton (seulement celle de la fenêtre) → une
+ré-activation ne peut plus le ré-afficher par-dessus un menu vivant. La fenêtre
+devient key pendant la présentation (clavier des champs rename/create) et rend la
+main à la fenêtre de l'app au dismiss (`previousKeyWindow`). Supprimé :
+`IVPresentationWindow`, `IVActiveWindowScene`, les propriétés `presWindow` /
+`presentedNav`. Drag/persistance adaptés (déplacent `container.center` dans le
+rootVC plein écran, insets lus sur notre propre fenêtre).
+
+Reste : build CI + publication IPA build-5, puis validation appareil (humain).
+
+
 
 Rapport appareil : « quand j'appuie dessus le bouton disparaît » — le tap faisait
 disparaître le bouton flottant mais le menu de gestion des conteneurs
