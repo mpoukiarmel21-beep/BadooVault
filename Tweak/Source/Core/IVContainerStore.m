@@ -343,7 +343,8 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
         // every container — in the real sandbox's Library session dirs, the real
         // un-namespaced keychain, and the live in-process cookie jar — so the per-
         // container wipes above never reach it. Clear all three here.
-        //   (1) On-disk real session surfaces (Cookies / HTTPStorages / WebKit).
+        //   (1) On-disk real session surfaces (Cookies / HTTPStorages / WebKit /
+        //       Caches / Application Support, plus Badoo's own Preferences plists).
         if (![IVPaths wipeRealSessionFiles]) ok = NO;
         //   (2) Real (un-"IV:"-namespaced) keychain login/session items.
         [IVKeychainHook purgeRealPasswordItems];
@@ -353,6 +354,22 @@ NSString *const kIVActiveChanged = @"kIVActiveChanged";
         NSHTTPCookieStorage *jar = [NSHTTPCookieStorage sharedHTTPCookieStorage];
         for (NSHTTPCookie *ck in [jar.cookies copy]) {
             [jar deleteCookie:ck];
+        }
+        //   (4) The live NSUserDefaults / cfprefsd cache for Badoo's own domain.
+        //       Badoo stores its "still logged in" flag / session token in
+        //       NSUserDefaults; cfprefsd holds it in memory and would re-persist it
+        //       over the plist wipeRealSessionFiles just removed (the intermittent
+        //       "compte ne disparaît pas toujours"). removePersistentDomainForName:
+        //       is the authoritative live clear — it drops every key for the domain
+        //       AND tells cfprefsd to persist the removal. On the default container
+        //       this hits the real domain directly; from inside a container it hits
+        //       the redirected one (that container is being deleted anyway), while
+        //       the real plist is covered by the on-disk wipe above.
+        NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
+        if (appDomain.length) {
+            NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+            [ud removePersistentDomainForName:appDomain];
+            [ud synchronize];
         }
     } @finally { [_lock unlock]; }
     if (persisted) {

@@ -770,7 +770,14 @@ static BOOL IVBindKeychainHooks(void) {
         NSDictionary *q = @{ (__bridge id)kSecClass:               cls,
                              (__bridge id)kSecMatchLimit:          (__bridge id)kSecMatchLimitAll,
                              (__bridge id)kSecReturnAttributes:    (__bridge id)kCFBooleanTrue,
-                             (__bridge id)kSecReturnPersistentRef: (__bridge id)kCFBooleanTrue };
+                             (__bridge id)kSecReturnPersistentRef: (__bridge id)kCFBooleanTrue,
+                             // Match iCloud-Keychain (synchronizable) items too, not only
+                             // device-local ones. A query that omits kSecAttrSynchronizable
+                             // defaults to non-synchronizable only, so a login token stored
+                             // as synchronizable would survive the sweep (the account "ne
+                             // disparaît pas toujours" after a reset). SynchronizableAny
+                             // covers both; we can only ever see Badoo's own items anyway.
+                             (__bridge id)kSecAttrSynchronizable:  (__bridge id)kSecAttrSynchronizableAny };
         CFTypeRef raw = NULL;
         OSStatus st = IVRawCopyMatching((__bridge CFDictionaryRef)q, &raw);
         if (st != errSecSuccess || !raw) { if (raw) CFRelease(raw); continue; }
@@ -800,7 +807,10 @@ static BOOL IVBindKeychainHooks(void) {
     for (id cls in IVNamespacedClasses()) {
         NSDictionary *q = @{ (__bridge id)kSecClass:            cls,
                              (__bridge id)kSecMatchLimit:       (__bridge id)kSecMatchLimitAll,
-                             (__bridge id)kSecReturnAttributes: (__bridge id)kCFBooleanTrue };
+                             (__bridge id)kSecReturnAttributes: (__bridge id)kCFBooleanTrue,
+                             // Count synchronizable items too, so the residue check
+                             // agrees with the (now SynchronizableAny) purge above.
+                             (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny };
         CFTypeRef raw = NULL;
         OSStatus st = IVRawCopyMatching((__bridge CFDictionaryRef)q, &raw);
         if (st != errSecSuccess || !raw) { if (raw) CFRelease(raw); continue; }
@@ -833,7 +843,14 @@ static BOOL IVBindKeychainHooks(void) {
         NSDictionary *q = @{ (__bridge id)kSecClass:               cls,
                              (__bridge id)kSecMatchLimit:          (__bridge id)kSecMatchLimitAll,
                              (__bridge id)kSecReturnAttributes:    (__bridge id)kCFBooleanTrue,
-                             (__bridge id)kSecReturnPersistentRef: (__bridge id)kCFBooleanTrue };
+                             (__bridge id)kSecReturnPersistentRef: (__bridge id)kCFBooleanTrue,
+                             // Match iCloud-Keychain (synchronizable) items too, not only
+                             // device-local ones. A query that omits kSecAttrSynchronizable
+                             // defaults to non-synchronizable only, so a login token stored
+                             // as synchronizable would survive the sweep (the account "ne
+                             // disparaît pas toujours" after a reset). SynchronizableAny
+                             // covers both; we can only ever see Badoo's own items anyway.
+                             (__bridge id)kSecAttrSynchronizable:  (__bridge id)kSecAttrSynchronizableAny };
         CFTypeRef raw = NULL;
         OSStatus st = IVRawCopyMatching((__bridge CFDictionaryRef)q, &raw);
         if (st != errSecSuccess || !raw) { if (raw) CFRelease(raw); continue; }

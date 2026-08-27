@@ -26,16 +26,17 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Personne. build-2 livré (CI verte) : bouton flottant redesigné + tap réparé.
-Créneau libre.
+Personne. build-3 en cours de CI : Reset (réinitialisation) élargi pour vraiment
+déconnecter le compte réel Badoo + purge conteneur renforcée. Créneau libre après
+la CI verte.
 
 ## Prochaine étape
 
-**Valider le build-2 sur appareil** (Sideloadly, iOS 17+). Corrige le rapport
-« bouton tout blanc + rien ne se passe au tap ». IPA prête :
-`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-2/BadooVault.ipa`
-(81,8 Mo). Depuis Windows la CI ne fait que produire l'IPA ; l'install + le test
-multi-comptes sont manuels (côté humain).
+**Valider build-3 sur appareil** (Sideloadly, iOS 17+). Corrige le rapport
+« quand je clique sur réinitialiser, le compte ne disparaît pas toujours » et
+« supprimer un conteneur doit effacer la totalité du cache + cookies + stockage
+sans impacter les autres ». Depuis Windows la CI ne fait que produire l'IPA ;
+l'install + le test multi-comptes restent manuels (côté humain).
 
 ## Blocages / risques
 
@@ -45,6 +46,48 @@ multi-comptes sont manuels (côté humain).
 - `BPEPushNotificationService.appex` conservée telle quelle ; re-signée par Sideloadly.
 
 ## Journal
+
+### 2026-08-27 — Claude Code — build-3 : Reset déconnecte vraiment + purge conteneur renforcée
+
+Rapport appareil : (1) après réinstall on retombe sur le conteneur par défaut
+déjà connecté (persistance keychain iOS au réinstall = comportement iOS attendu,
+non corrigeable côté tweak) ; (2) « quand je clique sur réinitialiser, le compte
+ne disparaît pas *toujours* » ; (3) supprimer un conteneur doit effacer la
+totalité du cache + cookies + stockage du bloc, en isolation.
+
+Diagnostic : le Reset ne nettoyait que `Library/{Cookies,HTTPStorages,WebKit}` du
+compte réel + keychain non-synchronizable + jar cookies live. Il **manquait** les
+surfaces où Badoo garde réellement l'état « encore connecté » : NSUserDefaults
+(`Library/Preferences/com.badoo.Badoo.plist`, avec cache cfprefsd vivant qui
+re-persiste par-dessus un simple `rm` → d'où l'intermittence), la DB de compte
+locale (`Library/Application Support`), le cache (`Library/Caches`), et les items
+keychain **synchronizable** (iCloud Keychain).
+
+Corrections (3 fichiers) :
+- `Tweak/Source/Core/IVPaths.m` — `wipeRealSessionFiles` élargi : ajoute `Caches`
+  et `Application Support` aux dossiers supprimés, et efface toutes les *.plist de
+  Preferences appartenant à Badoo (tout sauf `com.apple.*` / `.GlobalPreferences`).
+  Ne touche jamais `Documents/BadooVault` (control plane) ni `Documents/Instances`
+  (conteneurs), disjoints de Library.
+- `Tweak/Source/Core/IVContainerStore.m` — `resetAll` ajoute une étape (4) : flush
+  live de NSUserDefaults via `removePersistentDomainForName:` (domaine bundle) +
+  `synchronize`, pour que cfprefsd ne re-persiste pas la session par-dessus les
+  plists tout juste effacées (tue l'intermittence). Ordre conservé, puis cold-close
+  existant (`IVCloseAppForSwitch`).
+- `Tweak/Source/Isolation/IVKeychainHook.m` — `purgeItemsWithPrefix:`,
+  `countItemsWithPrefix:` et `purgeRealPasswordItems` : ajout de
+  `kSecAttrSynchronizable = kSecAttrSynchronizableAny` aux requêtes d'énumération,
+  pour attraper aussi les items iCloud-Keychain (sinon un token de login
+  synchronizable survivait au reset). Renforce aussi la purge par-conteneur.
+
+Delete conteneur : déjà complet et isolé — `removeItemAtPath:Instances/<cid>`
+efface tout l'arbre du bloc (HOME + Prefs + AppGroup redirigés dessous : Caches,
+Cookies, WebKit, HTTPStorages, Preferences, Application Support, AppGroups, tmp)
++ purge keychain `IV:<cid>:` (désormais SynchronizableAny). Aucun autre conteneur
+touché. Pas de nouveau code nécessaire, seulement renforcé par le SynchronizableAny.
+
+Reste : build CI + publication IPA build-3, puis validation appareil (humain).
+
 
 ### 2026-08-27 — Claude Code — build-2 : bouton flottant redesigné + tap réparé
 

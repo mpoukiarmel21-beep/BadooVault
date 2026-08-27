@@ -158,16 +158,21 @@ static void IVApplyProtection(NSString *path) {
     NSString *realHome = [self realHome];
     if (!realHome.length) return YES;
     NSString *lib = [realHome stringByAppendingPathComponent:@"Library"];
-
-    // The default/real account's login persists in these Library sub-trees. We
-    // remove the whole dirs (iOS recreates them empty on demand); the control
-    // plane lives under Documents/BadooVault, disjoint from Library, so it is
-    // never touched. Caches is deliberately left alone — the auth material lives
-    // in cookies / HTTPStorages / WebKit and the keychain, and nuking Caches would
-    // only slow the next launch for no logout benefit.
-    NSArray<NSString *> *sessionDirs = @[ @"Cookies", @"HTTPStorages", @"WebKit" ];
     NSFileManager *fm = [NSFileManager defaultManager];
     BOOL ok = YES;
+
+    // The default/real account's login persists across these Library sub-trees.
+    // We remove each whole dir (iOS recreates them empty on demand). The control
+    // plane (Documents/BadooVault) and every container (Documents/Instances/<cid>)
+    // live under Documents, disjoint from Library, so they are never touched.
+    //   - Cookies / HTTPStorages / WebKit: HTTP + WebKit session state.
+    //   - Caches: NSURLCache + image/profile caches. The user asked reset to clear
+    //     "la totalité du cash"; a stale Caches can also re-seed a logged-in view.
+    //   - Application Support: Badoo's local account DB (SQLite) — the most likely
+    //     home of the "still logged in" record, which cookies alone never cleared
+    //     (the "compte ne disparaît pas toujours" report).
+    NSArray<NSString *> *sessionDirs =
+        @[ @"Cookies", @"HTTPStorages", @"WebKit", @"Caches", @"Application Support" ];
     for (NSString *sub in sessionDirs) {
         NSString *path = [lib stringByAppendingPathComponent:sub];
         if (![fm fileExistsAtPath:path]) continue;
@@ -177,6 +182,27 @@ static void IVApplyProtection(NSString *path) {
             ok = NO;
         }
     }
+
+    // NSUserDefaults / CFPreferences domains. Badoo keeps session flags and login
+    // tokens here; the live cfprefsd cache is flushed separately in resetAll via
+    // removePersistentDomainForName:, but the on-disk plists must go too so a reset
+    // run from INSIDE a container (where the live API is redirected to the
+    // container) still clears the real account. In Badoo's own sandbox the
+    // Preferences dir only holds Badoo's domains plus Apple/system ones, so we
+    // remove every top-level *.plist EXCEPT com.apple.* and .GlobalPreferences.
+    NSString *prefs = [lib stringByAppendingPathComponent:@"Preferences"];
+    NSArray<NSString *> *entries = [fm contentsOfDirectoryAtPath:prefs error:NULL];
+    for (NSString *name in entries) {
+        if (![name.pathExtension isEqualToString:@"plist"]) continue;
+        if ([name hasPrefix:@"com.apple."]) continue;
+        if ([name hasPrefix:@".GlobalPreferences"]) continue;
+        NSError *err = nil;
+        if (![fm removeItemAtPath:[prefs stringByAppendingPathComponent:name] error:&err]) {
+            IVErr(@"wipeRealSessionFiles: failed to remove pref %@: %@", name, err);
+            ok = NO;
+        }
+    }
+
     IVLog(@"wipeRealSessionFiles: real session surfaces %@", ok ? @"cleared" : @"PARTIAL (see errors)");
     return ok;
 }
