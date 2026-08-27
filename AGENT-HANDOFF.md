@@ -26,9 +26,11 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Claude Code — 2026-08-27 (~21:40) : **Build C livré en code** (#3 auto-swipe
-configurable + #2 icônes de ligne restaurées + #1 création→activation→relance à
-froid). Tout committé sur `master`, build CI lancé. Aucun autre agent actif.
+Claude Code — 2026-08-27 (~21:45) : **Build C livré** (#3 auto-swipe configurable +
+#2 icônes de ligne restaurées + #1 création→activation→relance à froid). Commit
+`705ae4e` poussé sur `master`, **run 33115465717 verte → release `build-8`**
+(`BadooVault.ipa`, 81 889 805 B). Aucun autre agent actif. Reste : validation
+appareil (humain).
 
 ## Prochaine étape
 
@@ -62,10 +64,11 @@ install + test = humain.
 
 ## Journal
 
-### 2026-08-27 — Claude Code — build-C : #1 création→activation→relance + #2 icônes de ligne + #3 auto-swipe
+### 2026-08-27 — Claude Code — build-8 : #1 création→activation→relance + #2 icônes de ligne + #3 auto-swipe
 
 Traitement des 3 problèmes remontés par l'utilisateur après build-7, dans son
-ordre (#1 vital d'abord).
+ordre (#1 vital d'abord). Commit `705ae4e`, run 33115465717 verte, release
+`build-8` (`BadooVault.ipa`, 81 889 805 B).
 
 **#1 (VITAL) — « je crée un conteneur mais je retombe sur le même compte banni ».**
 Cause racine : créer un conteneur ne fait que l'ajouter à la liste ; l'isolation
