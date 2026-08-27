@@ -188,7 +188,10 @@
         return wrap;
     }
 
-    // Non-default: localisation (leading & prominent) · appareil · auto-swipe.
+    // Non-default: appareil (leading & prominent) · localisation · auto-swipe.
+    // Each container is a distinct virtual phone, so the phone glyph is the row's
+    // headline icon (replaces the GPS pin in the prominent spot); the GPS pin and
+    // auto-swipe trail it as regular controls (the pin stays visible and tappable).
     BOOL swipeOn = c.autoSwipeEnabled;
     UIButton *dev = [self glyphButton:@"iphone"
                                   row:row action:@selector(deviceInfoFromControl:)
@@ -197,15 +200,15 @@
                                     row:row action:@selector(autoSwipeFromControl:)
                                    tint:(swipeOn ? IVTheme.accent : IVTheme.secondaryText)];
 
-    // Pin leads and is wider than the rest so it stands out as the row's headline
-    // control; the smaller glyphs trail it.
-    const CGFloat pinW = 46.0, bw = 34.0, bh = 40.0;
-    NSArray<UIButton *> *trailing = @[ dev, swipe ];
-    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, pinW + bw * trailing.count, bh)];
-    pin.frame = CGRectMake(0, 0, pinW, bh);
-    [wrap addSubview:pin];
+    // Phone leads and is wider than the rest so it stands out as the row's headline
+    // control; the smaller glyphs (GPS · auto-swipe) trail it.
+    const CGFloat devW = 46.0, bw = 34.0, bh = 40.0;
+    NSArray<UIButton *> *trailing = @[ pin, swipe ];
+    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, devW + bw * trailing.count, bh)];
+    dev.frame = CGRectMake(0, 0, devW, bh);
+    [wrap addSubview:dev];
     [trailing enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
-        b.frame = CGRectMake(pinW + bw * i, 0, bw, bh);
+        b.frame = CGRectMake(devW + bw * i, 0, bw, bh);
         [wrap addSubview:b];
     }];
     return wrap;

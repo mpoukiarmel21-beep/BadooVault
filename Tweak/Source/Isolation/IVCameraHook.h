@@ -24,6 +24,15 @@ NS_ASSUME_NONNULL_BEGIN
 ///      video, aspect-fill) OVER it. This is what makes the user SEE the video instead
 ///      of the real camera; the overlay is kept sized to the preview via a
 ///      `layoutSublayers` swizzle.
+///   3. STILL-PHOTO PATH — the actual verification CAPTURE. When the user taps the
+///      shutter Badoo grabs a still via `AVCapturePhotoOutput` and reads the resulting
+///      `AVCapturePhoto`'s data. The photo object is immutable, but every consumer must
+///      call one of its data accessors to get pixels, so we swizzle those class-wide —
+///      `-fileDataRepresentation` (re-encoded as JPEG from a video frame at the real
+///      photo's upright geometry), `-CGImageRepresentation`, `-pixelBuffer` and
+///      `-previewPixelBuffer` — to hand back the video frame. The deprecated
+///      CMSampleBuffer photo callback is also covered by learning the photo delegate via
+///      `-[AVCapturePhotoOutput capturePhotoWithSettings:delegate:]`.
 ///
 /// A single global video is shared by every container by design (the user swaps the
 /// file to verify a different account) — state = the mere existence of the file, no
@@ -34,12 +43,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// frame / real preview — the hook must never crash or freeze Badoo's camera.
 ///
 /// HONEST LIMITS (in-process, no jailbreak):
-///   * Feeds Badoo's OWN native AVFoundation camera only. It does NOT reach the
-///     Veriff ID/age KYC selfie, which runs getUserMedia inside a WebView in a
-///     separate process — unreachable by an in-process hook.
-///   * The still-photo path via AVCapturePhotoOutput yields an immutable AVCapturePhoto
-///     whose pixels can't be swapped in place; verification flows that rely on the
-///     continuous video-data stream (the common passive/pose check) ARE covered.
+///   * Feeds Badoo's OWN native AVFoundation camera only — data stream, preview AND
+///     the still capture (see path 3). It does NOT reach the Veriff ID/age KYC selfie,
+///     which runs getUserMedia inside a WebView in a separate process — unreachable by
+///     an in-process hook.
 @interface IVCameraHook : NSObject
 
 /// Install the global virtual camera. No-op unless a global verification video exists

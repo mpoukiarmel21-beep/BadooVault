@@ -47,6 +47,6 @@ BadooVault_CFLAGS = -fobjc-arc \
 	-Wno-deprecated-declarations -Wno-unused-variable \
 	-Wno-error=unguarded-availability-new
 
-BadooVault_FRAMEWORKS = UIKit CoreLocation MapKit Security AVFoundation CoreMedia CoreVideo CoreImage PhotosUI
+BadooVault_FRAMEWORKS = UIKit CoreLocation MapKit Security AVFoundation CoreMedia CoreVideo CoreImage ImageIO PhotosUI
 
 include $(THEOS_MAKE_PATH)/library.mk

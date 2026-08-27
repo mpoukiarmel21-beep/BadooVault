@@ -6,6 +6,7 @@
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #import <CoreImage/CoreImage.h>
+#import <ImageIO/ImageIO.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -313,6 +314,210 @@ static void IVInstallPreviewOverlay(void) {
 }
 
 // ============================================================================
+// Still-photo path — the actual verification CAPTURE. The preview overlay and the
+// video-data swap cover what Badoo SHOWS and streams, but when the user taps the
+// shutter Badoo grabs a still via AVCapturePhotoOutput and reads the resulting
+// AVCapturePhoto's data — which was the real selfie, not our video. AVCapturePhoto
+// is immutable, but every consumer must call one of its data accessors to get
+// pixels, so we swizzle those accessors (class-wide) to hand back a frame rendered
+// from the global video instead. Delegate-agnostic and defensive: any failure
+// returns the real photo untouched so the camera never breaks.
+// ============================================================================
+
+static CIContext *gStillCtx = nil;                        // renders video frames to CGImages
+static NSMutableSet<NSNumber *> *gSwizzledPhotoDelegates; // legacy photo delegate classes hooked
+static SEL gDidFinishPhotoSBSel;                          // deprecated CMSampleBuffer photo callback
+
+// Render the next video frame to a CGImage of exactly w x h pixels (aspect-fill).
+// Caller owns the result (CGImageRelease). NULL on any failure.
+static CGImageRef IVCopyStillFrameCGImage(size_t w, size_t h) CF_RETURNS_RETAINED {
+    IVVideoFeeder *feeder = gFeeder;
+    if (!feeder || w == 0 || h == 0) return NULL;
+    CVPixelBufferRef px = [feeder copyPixelBufferForWidth:w height:h pixelFormat:kCVPixelFormatType_32BGRA];
+    if (!px) return NULL;
+    CGImageRef cg = NULL;
+    @try {
+        if (!gStillCtx) gStillCtx = [CIContext contextWithOptions:nil];
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:px];
+        cg = [gStillCtx createCGImage:ci fromRect:ci.extent];
+    } @catch (__unused NSException *e) { cg = NULL; }
+    CVPixelBufferRelease(px);
+    return cg;
+}
+
+// Encode a CGImage to JPEG data (orientation up). nil on failure.
+static NSData *IVEncodeJPEGData(CGImageRef img, CGFloat quality) {
+    if (!img) return nil;
+    NSMutableData *data = [NSMutableData data];
+    CGImageDestinationRef dst =
+        CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data, CFSTR("public.jpeg"), 1, NULL);
+    if (!dst) return nil;
+    NSDictionary *props = @{ (__bridge id)kCGImageDestinationLossyCompressionQuality: @(quality) };
+    CGImageDestinationAddImage(dst, img, (__bridge CFDictionaryRef)props);
+    BOOL ok = CGImageDestinationFinalize(dst);
+    CFRelease(dst);
+    return ok ? data : nil;
+}
+
+// Swizzle AVCapturePhoto's data accessors so any consumer reading its pixels gets
+// our video frame. Covers the modern -captureOutput:didFinishProcessingPhoto: path
+// completely, whatever the delegate does with the photo.
+static void IVInstallPhotoAccessorHook(void) {
+    Class cls = objc_getClass("AVCapturePhoto");
+    if (!cls) { IVErr(@"camera: AVCapturePhoto unavailable — modern photo path not hooked"); return; }
+
+    // -fileDataRepresentation → the JPEG/HEIF NSData most apps upload. Re-encode our
+    // frame as JPEG sized to the real photo's UPRIGHT geometry (stored buffers for
+    // 90°/270° orientations are landscape) so aspect ratio and resolution match.
+    SEL fileSel = @selector(fileDataRepresentation);
+    Method fm = class_getInstanceMethod(cls, fileSel);
+    if (fm) {
+        const char *types = method_getTypeEncoding(fm);
+        IMP orig = method_getImplementation(fm);
+        IMP repl = imp_implementationWithBlock(^NSData *(id photoSelf) {
+            NSData *real = ((NSData *(*)(id, SEL))orig)(photoSelf, fileSel);
+            if (!gFeeder || !gVideoURL) return real;
+            @try {
+                size_t W = 0, H = 0;
+                CGImagePropertyOrientation orient = kCGImagePropertyOrientationUp;
+                if (real.length) {
+                    CGImageSourceRef s = CGImageSourceCreateWithData((__bridge CFDataRef)real, NULL);
+                    if (s) {
+                        NSDictionary *p = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(s, 0, NULL));
+                        W = [p[(__bridge id)kCGImagePropertyPixelWidth] unsignedLongValue];
+                        H = [p[(__bridge id)kCGImagePropertyPixelHeight] unsignedLongValue];
+                        NSNumber *o = p[(__bridge id)kCGImagePropertyOrientation];
+                        if (o) orient = (CGImagePropertyOrientation)o.intValue;
+                        CFRelease(s);
+                    }
+                }
+                BOOL swap = (orient == kCGImagePropertyOrientationLeft ||
+                             orient == kCGImagePropertyOrientationRight ||
+                             orient == kCGImagePropertyOrientationLeftMirrored ||
+                             orient == kCGImagePropertyOrientationRightMirrored);
+                size_t tW = swap ? H : W, tH = swap ? W : H;
+                if (tW == 0 || tH == 0) { tW = 1080; tH = 1920; }
+                CGImageRef cg = IVCopyStillFrameCGImage(tW, tH);
+                if (!cg) return real;
+                NSData *out = IVEncodeJPEGData(cg, 0.92);
+                CGImageRelease(cg);
+                return out.length ? out : real;
+            } @catch (__unused NSException *e) { return real; }
+        });
+        class_replaceMethod(cls, fileSel, repl, types);
+    }
+
+    // -CGImageRepresentation → CGImageRef (Get semantics, owned by the photo). Hand
+    // back an autoreleased CGImage of our frame at the same pixel size.
+    SEL cgSel = @selector(CGImageRepresentation);
+    Method cm = class_getInstanceMethod(cls, cgSel);
+    if (cm) {
+        const char *types = method_getTypeEncoding(cm);
+        IMP orig = method_getImplementation(cm);
+        IMP repl = imp_implementationWithBlock(^CGImageRef(id photoSelf) {
+            CGImageRef real = ((CGImageRef(*)(id, SEL))orig)(photoSelf, cgSel);
+            if (!gFeeder || !gVideoURL || !real) return real;
+            @try {
+                CGImageRef cg = IVCopyStillFrameCGImage(CGImageGetWidth(real), CGImageGetHeight(real));
+                if (!cg) return real;
+                return (CGImageRef)CFAutorelease(cg);
+            } @catch (__unused NSException *e) { return real; }
+        });
+        class_replaceMethod(cls, cgSel, repl, types);
+    }
+
+    // -pixelBuffer / -previewPixelBuffer → CVPixelBufferRef (Get semantics). Only
+    // non-nil when the app requested an uncompressed/RAW format; cover both.
+    for (NSString *name in @[ @"pixelBuffer", @"previewPixelBuffer" ]) {
+        SEL sel = NSSelectorFromString(name);
+        Method pm = class_getInstanceMethod(cls, sel);
+        if (!pm) continue;
+        const char *types = method_getTypeEncoding(pm);
+        IMP orig = method_getImplementation(pm);
+        IMP repl = imp_implementationWithBlock(^CVPixelBufferRef(id photoSelf) {
+            CVPixelBufferRef real = ((CVPixelBufferRef(*)(id, SEL))orig)(photoSelf, sel);
+            if (!gFeeder || !gVideoURL || !real) return real;
+            @try {
+                size_t w = CVPixelBufferGetWidth(real), h = CVPixelBufferGetHeight(real);
+                OSType fmt = CVPixelBufferGetPixelFormatType(real);
+                CVPixelBufferRef px = [gFeeder copyPixelBufferForWidth:w height:h pixelFormat:fmt];
+                if (!px) return real;
+                return (CVPixelBufferRef)CFAutorelease(px);
+            } @catch (__unused NSException *e) { return real; }
+        });
+        class_replaceMethod(cls, sel, repl, types);
+    }
+
+    IVLog(@"camera: still-photo accessors hooked (AVCapturePhoto)");
+}
+
+// Legacy fallback: some older capture code takes the still via the DEPRECATED
+// -captureOutput:didFinishProcessingPhotoSampleBuffer:... callback, which hands the
+// delegate a CMSampleBuffer (not an AVCapturePhoto), so the accessor swizzle can't
+// reach it. Swap the sample buffer directly, exactly like the video-data path.
+static void IVSwizzlePhotoDelegateClass(Class cls) {
+    if (!cls) return;
+    @synchronized (gSwizzledPhotoDelegates) {
+        NSNumber *key = @((uintptr_t)cls);
+        if ([gSwizzledPhotoDelegates containsObject:key]) return;
+        [gSwizzledPhotoDelegates addObject:key];
+    }
+    Method m = class_getInstanceMethod(cls, gDidFinishPhotoSBSel);
+    if (!m) return;   // modern delegate (AVCapturePhoto) — already covered by the accessor swizzle
+    const char *types = method_getTypeEncoding(m);
+    IMP origIMP = method_getImplementation(m);
+
+    IMP newIMP = imp_implementationWithBlock(^(id delegateSelf,
+                                               AVCaptureOutput *output,
+                                               CMSampleBufferRef photoSB,
+                                               CMSampleBufferRef previewSB,
+                                               id resolved, id bracket, NSError *error) {
+        CMSampleBufferRef replacement = NULL;
+        @try {
+            IVVideoFeeder *feeder = gFeeder;
+            CVImageBufferRef img = photoSB ? CMSampleBufferGetImageBuffer(photoSB) : NULL;
+            if (feeder && img) {
+                size_t w = CVPixelBufferGetWidth(img), h = CVPixelBufferGetHeight(img);
+                OSType fmt = CVPixelBufferGetPixelFormatType(img);
+                CVPixelBufferRef newPix = [feeder copyPixelBufferForWidth:w height:h pixelFormat:fmt];
+                if (newPix) { replacement = IVCreateSampleBuffer(photoSB, newPix); CFRelease(newPix); }
+            }
+        } @catch (__unused NSException *e) {
+            if (replacement) { CFRelease(replacement); replacement = NULL; }
+        }
+        CMSampleBufferRef deliver = replacement ?: photoSB;
+        ((void(*)(id, SEL, AVCaptureOutput *, CMSampleBufferRef, CMSampleBufferRef, id, id, NSError *))origIMP)(
+            delegateSelf, gDidFinishPhotoSBSel, output, deliver, previewSB, resolved, bracket, error);
+        if (replacement) CFRelease(replacement);
+    });
+    class_replaceMethod(cls, gDidFinishPhotoSBSel, newIMP, types);
+    IVLog(@"camera: hooked legacy photo delegate %s", class_getName(cls));
+}
+
+// Learn the legacy photo delegate the instant Badoo requests a still capture:
+// swizzle -[AVCapturePhotoOutput capturePhotoWithSettings:delegate:] and hook the
+// delegate's deprecated sample-buffer callback (no-op if it only implements the
+// modern one).
+static void IVInstallPhotoDelegateLearner(void) {
+    Class outCls = objc_getClass("AVCapturePhotoOutput");
+    if (!outCls) return;
+    SEL sel = @selector(capturePhotoWithSettings:delegate:);
+    Method m = class_getInstanceMethod(outCls, sel);
+    if (!m) return;
+    const char *types = method_getTypeEncoding(m);
+    IMP origIMP = method_getImplementation(m);
+
+    IMP newIMP = imp_implementationWithBlock(^(id outputSelf, id settings, id<NSObject> delegate) {
+        @try { if (delegate) IVSwizzlePhotoDelegateClass(object_getClass(delegate)); }
+        @catch (__unused NSException *e) {}
+        ((void(*)(id, SEL, id, id))origIMP)(outputSelf, sel, settings, delegate);
+    });
+    class_replaceMethod(outCls, sel, newIMP, types);
+    IVLog(@"camera: photo delegate learner installed");
+}
+
+
+// ============================================================================
 @implementation IVCameraHook
 
 + (void)installGlobal {
@@ -333,9 +538,13 @@ static void IVInstallPreviewOverlay(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         gDidOutputSel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
+        gDidFinishPhotoSBSel = @selector(captureOutput:didFinishProcessingPhotoSampleBuffer:previewPhotoSampleBuffer:resolvedSettings:bracketSettings:error:);
         gSwizzledDelegates = [NSMutableSet new];
-        IVInstallDelegateLearner();
-        IVInstallPreviewOverlay();
+        gSwizzledPhotoDelegates = [NSMutableSet new];
+        IVInstallDelegateLearner();       // continuous video-data stream (preview/pose)
+        IVInstallPreviewOverlay();        // what the user SEES on screen
+        IVInstallPhotoAccessorHook();     // the still CAPTURE (modern AVCapturePhoto)
+        IVInstallPhotoDelegateLearner();  // the still CAPTURE (legacy CMSampleBuffer)
     });
 
     gFeeder = [[IVVideoFeeder alloc] initWithVideoURL:gVideoURL];
