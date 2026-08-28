@@ -27,6 +27,23 @@
                                 pixelFormat:(OSType)pixelFormat CF_RETURNS_RETAINED;
 @end
 
+// Map an AVAssetTrack.preferredTransform to the CGImagePropertyOrientation that makes
+// its decoded frames UPRIGHT. AVAssetReader hands back RAW frames in STORED orientation
+// and IGNORES preferredTransform, so a portrait iPhone selfie (stored 1920×1080 landscape
+// + a 90° transform) decodes sideways — that is exactly the "tête à droite, corps à gauche"
+// the user reported. AVPlayer (the preview overlay) DOES apply the transform, which is why
+// the preview looked right while the captured still was rotated. We recover the intended
+// orientation from the transform's rotation angle and re-apply it to every decoded frame.
+static CGImagePropertyOrientation IVOrientationForTransform(CGAffineTransform t) {
+    CGFloat deg = atan2(t.b, t.a) * 180.0 / M_PI;   // rotation the video wants applied
+    if (deg < 0) deg += 360.0;
+    if (fabs(deg -  90.0) < 1.0) return kCGImagePropertyOrientationRight;  // portrait
+    if (fabs(deg - 270.0) < 1.0) return kCGImagePropertyOrientationLeft;   // portrait, other way
+    if (fabs(deg - 180.0) < 1.0) return kCGImagePropertyOrientationDown;   // upside-down landscape
+    return kCGImagePropertyOrientationUp;                                  // already upright
+}
+
+
 @implementation IVVideoFeeder {
     NSURL *_url;
     AVAssetReader *_reader;
@@ -36,12 +53,14 @@
     size_t _poolW, _poolH;
     OSType _poolFmt;
     NSLock *_lock;
+    CGImagePropertyOrientation _orient;   // orientation to make decoded frames upright
 }
 
 - (instancetype)initWithVideoURL:(NSURL *)url {
     if ((self = [super init])) {
         _url = url;
         _lock = [NSLock new];
+        _orient = kCGImagePropertyOrientationUp;
         _ci = [CIContext contextWithOptions:@{ kCIContextWorkingColorSpace: [NSNull null] }];
     }
     return self;
@@ -58,6 +77,8 @@
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:_url options:nil];
     AVAssetTrack *track = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
     if (!track) { IVErr(@"camera feeder: no video track in %@", _url.lastPathComponent); return NO; }
+    // Recover the upright orientation from the track's transform (AVAssetReader won't).
+    _orient = IVOrientationForTransform(track.preferredTransform);
     AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&err];
     if (!reader) { IVErr(@"camera feeder: reader init failed: %@", err); return NO; }
     NSDictionary *settings = @{ (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA) };
@@ -123,6 +144,17 @@
         // Aspect-fill the source into the destination (center-crop), so a portrait
         // selfie video fills a portrait camera frame without letterboxing.
         CIImage *ciSrc = [CIImage imageWithCVPixelBuffer:src];
+        // Normalize to UPRIGHT before measuring/aspect-filling. A sideways decoded frame
+        // stretched into a portrait target is exactly the "à l'envers / tête allongée"
+        // artifact — fixing it here corrects BOTH the live data path and the still path,
+        // which both funnel through this method.
+        if (_orient != kCGImagePropertyOrientationUp) {
+            ciSrc = [ciSrc imageByApplyingCGOrientation:_orient];
+            CGRect e = ciSrc.extent;   // rotation can shift the extent origin off (0,0)
+            if (e.origin.x != 0 || e.origin.y != 0) {
+                ciSrc = [ciSrc imageByApplyingTransform:CGAffineTransformMakeTranslation(-e.origin.x, -e.origin.y)];
+            }
+        }
         CGSize s = ciSrc.extent.size;
         if (s.width > 0 && s.height > 0) {
             CGFloat scale = MAX((CGFloat)width / s.width, (CGFloat)height / s.height);
@@ -397,6 +429,11 @@ static void IVInstallPhotoAccessorHook(void) {
                              orient == kCGImagePropertyOrientationRightMirrored);
                 size_t tW = swap ? H : W, tH = swap ? W : H;
                 if (tW == 0 || tH == 0) { tW = 1080; tH = 1920; }
+                // User requirement: the verification still must be phone-VERTICAL (9:16-ish,
+                // e.g. 1080×1920), never landscape. The feeder now delivers upright content;
+                // guarantee a portrait TARGET too, so a portrait selfie is never boxed into a
+                // landscape frame.
+                if (tW > tH) { size_t t = tW; tW = tH; tH = t; }
                 CGImageRef cg = IVCopyStillFrameCGImage(tW, tH);
                 if (!cg) return real;
                 NSData *out = IVEncodeJPEGData(cg, 0.92);

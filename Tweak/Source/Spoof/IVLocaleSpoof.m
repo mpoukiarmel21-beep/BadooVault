@@ -11,6 +11,12 @@ static NSArray<NSString *> *gPreferredLanguages = nil;    // @[@"fr-FR", @"fr"]
 static NSLocale *gFixedLocale = nil;                      // captured once, returned by hooks
 static NSTimeZone *gFixedTimeZone = nil;                  // captured once, returned by hooks
 
+// UI-language override: the chosen .lproj bundle inside the app + its resolved
+// localization name (e.g. "en"). Set once when the container's language actually
+// maps to an .lproj Badoo ships. nil == leave the UI language untouched.
+static NSBundle *gLprojBundle = nil;
+static NSString *gLprojName   = nil;
+
 // Saved CF originals (fishhook, app-binary imports only).
 static CFLocaleRef   (*orig_CFLocaleCopyCurrent)(void)   = NULL;
 static CFTimeZoneRef (*orig_CFTimeZoneCopySystem)(void)  = NULL;
@@ -75,6 +81,85 @@ static CFTimeZoneRef iv_CFTimeZoneCopyDefault(void) {
     return orig_CFTimeZoneCopyDefault();
 }
 
+#pragma mark - UI language: NSBundle .lproj override
+
+// A drop-in subclass swapped onto the app's MAIN bundle via object_setClass. Every
+// NSLocalizedString / -localizedStringForKey: the app issues then resolves against
+// the container's chosen .lproj instead of the phone's system language — this is the
+// piece that actually re-renders Badoo's UI in the selected language (the CFPreferences
+// / NSLocale seeds alone don't, because UIKit resolves the main bundle's localization
+// once, from the system language, before our constructor's other hooks are read).
+@interface IVLocalizedBundle : NSBundle
+@end
+@implementation IVLocalizedBundle
+- (NSString *)localizedStringForKey:(NSString *)key value:(NSString *)value table:(NSString *)tableName {
+    NSBundle *b = gLprojBundle;
+    if (b) {
+        // Sentinel-based miss detection: ask the chosen .lproj with a unique default so
+        // we can tell "found in this table" from "absent", and fall back to the app's
+        // real resolution for keys that table doesn't carry (never return the key raw).
+        static NSString *const kMiss = @"__IV_LPROJ_MISS__";
+        NSString *s = [b localizedStringForKey:key value:kMiss table:tableName];
+        if (s.length && ![s isEqualToString:kMiss]) return s;
+    }
+    return [super localizedStringForKey:key value:value table:tableName];
+}
+- (NSArray<NSString *> *)preferredLocalizations {
+    if (gLprojName.length) return @[ gLprojName ];
+    return [super preferredLocalizations];
+}
+- (NSArray<NSString *> *)localizations {
+    if (gLprojName.length) return @[ gLprojName ];
+    return [super localizations];
+}
+@end
+
+// Resolve the app-shipped .lproj that best matches the chosen language/region. Tries
+// region-qualified ("en-US"), then the bare language ("en"), then the base subtag,
+// then a case-insensitive scan of the bundle's own localizations. Sets gLprojBundle
+// + returns the matched name, or nil when Badoo ships no such localization.
+static NSString *IVResolveLproj(NSString *lang, NSString *region) {
+    if (lang.length == 0) return nil;
+    NSBundle *main = [NSBundle mainBundle];
+    NSMutableArray<NSString *> *cands = [NSMutableArray array];
+    if (region.length) [cands addObject:[NSString stringWithFormat:@"%@-%@", lang, region]];
+    [cands addObject:lang];
+    NSString *base = [[lang componentsSeparatedByString:@"-"] firstObject];
+    if (base.length && ![base isEqualToString:lang]) [cands addObject:base];
+
+    for (NSString *c in cands) {
+        NSString *path = [main pathForResource:c ofType:@"lproj"];
+        if (path) { gLprojBundle = [NSBundle bundleWithPath:path]; return c; }
+    }
+    for (NSString *loc in main.localizations) {
+        for (NSString *c in cands) {
+            if ([loc caseInsensitiveCompare:c] == NSOrderedSame) {
+                NSString *path = [main pathForResource:loc ofType:@"lproj"];
+                if (path) { gLprojBundle = [NSBundle bundleWithPath:path]; return loc; }
+            }
+        }
+    }
+    return nil;
+}
+
+// Swizzle one NSUserDefaults read (objectForKey:/arrayForKey:/stringForKey:) so a
+// container that overrode its language/region answers AppleLanguages / AppleLocale
+// with the SPOOFED values — the C-level defaults path many SDKs use to fingerprint
+// the device's language list, which the NSLocale swizzles alone don't cover.
+static void IVSwizzleUDReader(SEL sel) {
+    Method m = class_getInstanceMethod([NSUserDefaults class], sel);
+    if (!m) return;
+    IMP orig = method_getImplementation(m);
+    IMP repl = imp_implementationWithBlock(^id(id _self, NSString *key) {
+        if ([key isKindOfClass:[NSString class]]) {
+            if (gPreferredLanguages.count && [key isEqualToString:@"AppleLanguages"]) return gPreferredLanguages;
+            if (gLocaleIdentifier.length  && [key isEqualToString:@"AppleLocale"])    return gLocaleIdentifier;
+        }
+        return ((id (*)(id, SEL, NSString *))orig)(_self, sel, key);
+    });
+    method_setImplementation(m, repl);
+}
+
 #pragma mark - Install
 
 @implementation IVLocaleSpoof
@@ -110,18 +195,23 @@ static CFTimeZoneRef iv_CFTimeZoneCopyDefault(void) {
         gTimeZoneName = gFixedTimeZone ? [tzName copy] : nil;   // only spoof tz if resolvable
     }
 
-    // 1. Seed AppleLanguages / AppleLocale into the container's (already-redirected
-    //    by IVPrefsHook) preferences, so NSBundle loads the matching .lproj. This
-    //    runs in the launch constructor, before UIKit reads localization.
+    // 1. Seed AppleLanguages / AppleLocale for C-level defaults readers. Written to the
+    //    app's OWN bundle-id domain (NOT kCFPreferencesAnyApplication): IVPrefsHook
+    //    redirects the app's non-com.apple domain into the container, so this stays
+    //    isolated. Writing the global .GlobalPreferences domain instead could bleed one
+    //    container's language into another (or the real account) — a #3 isolation leak.
+    //    CFPreferencesCopyAppValue consults the app domain before the global one, so an
+    //    app-domain seed is honored while remaining container-scoped.
+    CFStringRef appID = (__bridge CFStringRef)([[NSBundle mainBundle] bundleIdentifier] ?: @"com.badoo.Badoo");
     if (gPreferredLanguages.count) {
         CFPreferencesSetValue(CFSTR("AppleLanguages"), (__bridge CFArrayRef)gPreferredLanguages,
-                              kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+                              appID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     }
     if (gLocaleIdentifier.length) {
         CFPreferencesSetValue(CFSTR("AppleLocale"), (__bridge CFStringRef)gLocaleIdentifier,
-                              kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+                              appID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     }
-    CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    CFPreferencesSynchronize(appID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 
     // 2. NSLocale ObjC surfaces — return the fixed locale (captured once to avoid
     //    rebuilding, and to keep the closure independent of the swizzled methods).
@@ -156,8 +246,32 @@ static CFTimeZoneRef iv_CFTimeZoneCopyDefault(void) {
     }
     int rc = (n > 0) ? rebind_symbols(r, n) : 0;
 
-    IVLog(@"LocaleSpoof: locale=%@ langs=%@ tz=%@ rc=%d",
-          gLocaleIdentifier, gPreferredLanguages, gTimeZoneName ?: @"real", rc);
+    // 5. UI LANGUAGE — the fix for "Badoo reste en français quand je choisis l'anglais".
+    //    Swap the app's main bundle for a subclass that resolves every localized string
+    //    against the chosen .lproj. Only when the language actually maps to a shipped
+    //    localization (otherwise the UI stays as-is rather than showing raw keys).
+    if (lang) {
+        NSString *matched = IVResolveLproj(lang, region);
+        if (matched && gLprojBundle) {
+            gLprojName = [matched copy];
+            object_setClass([NSBundle mainBundle], [IVLocalizedBundle class]);
+            IVLog(@"LocaleSpoof: UI language bundle -> %@.lproj", matched);
+        } else {
+            IVErr(@"LocaleSpoof: no shipped .lproj for %@ (region %@) — UI language left as-is",
+                  lang, region ?: @"-");
+        }
+    }
+
+    // 6. NSUserDefaults C-level reads (AppleLanguages / AppleLocale) — the language-list
+    //    fingerprint path the NSLocale swizzles don't cover. Also a #3 isolation win: a
+    //    container that set no language keeps the real device list, but one that did now
+    //    reports ONLY its persona's language, never the phone's.
+    IVSwizzleUDReader(@selector(objectForKey:));
+    IVSwizzleUDReader(@selector(arrayForKey:));
+    IVSwizzleUDReader(@selector(stringForKey:));
+
+    IVLog(@"LocaleSpoof: locale=%@ langs=%@ tz=%@ lproj=%@ rc=%d",
+          gLocaleIdentifier, gPreferredLanguages, gTimeZoneName ?: @"real", gLprojName ?: @"none", rc);
 }
 
 #pragma mark - Option sources
