@@ -297,6 +297,15 @@ static const CGFloat kIVEdgeMargin = 18.0;   // breathing room from the screen e
     [restore makeKeyWindow];
 }
 
+// Public restore for a PROGRAMMATIC dismiss (e.g. the auto-swipe panel calling
+// -dismissViewControllerAnimated: when "Démarrer" is tapped). That path fires
+// neither onClose nor presentationControllerDidDismiss:, so without this the
+// button would stay hidden over Badoo. teardownPresentation is idempotent, so
+// this is safe even if the button is already visible.
+- (void)restoreButtonAfterExternalDismiss {
+    [self teardownPresentation];
+}
+
 #pragma mark - UIAdaptivePresentationControllerDelegate
 
 - (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController {

@@ -16,6 +16,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)show;
 - (void)hide;
 
+/// Re-show the floating button after the panel (or one of its pushed children,
+/// e.g. the auto-swipe config) was dismissed programmatically rather than by the
+/// Close button / swipe-down. A programmatic dismiss fires neither `onClose` nor
+/// the presentation-controller delegate, so the button would stay hidden; the
+/// dismisser calls this to restore it. Idempotent and safe to call when the
+/// button is already visible.
+- (void)restoreButtonAfterExternalDismiss;
+
 @end
 
 NS_ASSUME_NONNULL_END

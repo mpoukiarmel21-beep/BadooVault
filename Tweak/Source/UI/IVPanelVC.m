@@ -188,27 +188,29 @@
         return wrap;
     }
 
-    // Non-default: appareil (leading & prominent) · localisation · auto-swipe.
-    // Each container is a distinct virtual phone, so the phone glyph is the row's
-    // headline icon (replaces the GPS pin in the prominent spot); the GPS pin and
-    // auto-swipe trail it as regular controls (the pin stays visible and tappable).
+    // Non-default: réglages (leading & prominent) · localisation · auto-swipe.
+    // Build-11 : à la demande de l'utilisateur, l'icône de tête n'est plus le
+    // téléphone mais l'engrenage « options / langue & région » (ouvre la feuille
+    // de réglages). Le pin GPS et l'auto-swipe la suivent comme contrôles normaux
+    // (le pin reste visible et tappable). Les infos appareil passent dans la
+    // feuille d'actions de la ligne (« Appareil (infos) »).
     BOOL swipeOn = c.autoSwipeEnabled;
-    UIButton *dev = [self glyphButton:@"iphone"
-                                  row:row action:@selector(deviceInfoFromControl:)
-                                 tint:IVTheme.secondaryText];
+    UIButton *settings = [self glyphButton:@"gearshape"
+                                       row:row action:@selector(settingsFromControl:)
+                                      tint:IVTheme.secondaryText];
     UIButton *swipe = [self glyphButton:(swipeOn ? @"hand.draw.fill" : @"hand.draw")
                                     row:row action:@selector(autoSwipeFromControl:)
                                    tint:(swipeOn ? IVTheme.accent : IVTheme.secondaryText)];
 
-    // Phone leads and is wider than the rest so it stands out as the row's headline
-    // control; the smaller glyphs (GPS · auto-swipe) trail it.
-    const CGFloat devW = 46.0, bw = 34.0, bh = 40.0;
+    // Settings leads and is wider than the rest so it stands out as the row's
+    // headline control; the smaller glyphs (GPS · auto-swipe) trail it.
+    const CGFloat leadW = 46.0, bw = 34.0, bh = 40.0;
     NSArray<UIButton *> *trailing = @[ pin, swipe ];
-    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, devW + bw * trailing.count, bh)];
-    dev.frame = CGRectMake(0, 0, devW, bh);
-    [wrap addSubview:dev];
+    UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, leadW + bw * trailing.count, bh)];
+    settings.frame = CGRectMake(0, 0, leadW, bh);
+    [wrap addSubview:settings];
     [trailing enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
-        b.frame = CGRectMake(devW + bw * i, 0, bw, bh);
+        b.frame = CGRectMake(leadW + bw * i, 0, bw, bh);
         [wrap addSubview:b];
     }];
     return wrap;
@@ -256,12 +258,13 @@
                                            handler:^{ [ws activate:c]; }]];
     }
     if (!c.isDefault) {
-        // Appareil, caméra et auto-swipe ont leurs icônes directes sur la ligne ;
-        // ne restent ici que les réglages sans icône dédiée + renommer / supprimer.
-        [sheet addAction:[IVAction actionWithTitle:@"Langue & région"
-                                            symbol:@"gearshape"
+        // Réglages (langue & région) et auto-swipe ont leurs icônes directes sur la
+        // ligne ; l'appareil (infos, lecture seule) est déplacé ici en build-11 (il
+        // avait perdu son icône de ligne), avec renommer / supprimer.
+        [sheet addAction:[IVAction actionWithTitle:@"Appareil (infos)"
+                                            symbol:@"iphone"
                                              style:IVActionStyleDefault
-                                           handler:^{ [ws showSettingsFor:c]; }]];
+                                           handler:^{ [ws showDeviceInfoFor:c]; }]];
         [sheet addAction:[IVAction actionWithTitle:@"Renommer"
                                             symbol:@"pencil"
                                              style:IVActionStyleDefault
@@ -307,10 +310,10 @@
 
 #pragma mark - Row icon handlers (device · auto-swipe)
 
-// "Téléphone" : ouvre la fiche appareil (modèle, iOS, série — lecture seule).
-- (void)deviceInfoFromControl:(UIButton *)sender {
+// "Réglages" (icône engrenage en tête de ligne) : ouvre la feuille langue & région.
+- (void)settingsFromControl:(UIButton *)sender {
     IVContainer *c = [self containerForControl:sender];
-    if (c) [self showDeviceInfoFor:c];
+    if (c) [self showSettingsFor:c];
 }
 
 // "Auto-swipe" : ouvre le panneau de configuration du bot pour ce conteneur.

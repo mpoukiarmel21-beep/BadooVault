@@ -4,7 +4,6 @@
 #import "../Core/IVContainer.h"
 #import "../Core/IVContainerStore.h"
 #import "../Spoof/IVDeviceIdentity.h"
-#import "../Util/IVAppRelaunch.h"
 
 #pragma mark - Create / edit
 
@@ -91,7 +90,6 @@
     IVContainerStore *store = [IVContainerStore shared];
 
     IVContainer *target = self.editing;
-    BOOL creating = (target == nil);
     if (target) {
         if (![store renameContainer:target to:name]) { [self warnSaveFailed]; return; }
     } else {
@@ -108,55 +106,14 @@
         return;
     }
 
-    // Édition d'un conteneur existant : rien à activer, on revient au panneau.
-    if (!creating) {
-        [self dismissViewControllerAnimated:YES completion:nil];
-        return;
-    }
-
-    // Création : c'est ICI que se règle le bug « je crée un conteneur mais je
-    // retombe sur le même compte ». Créer un conteneur ne fait que l'ajouter à la
-    // liste ; l'isolation (redirections HOME/keychain/prefs/app-group + spoof
-    // device) n'est appliquée qu'au PROCHAIN lancement, sur le conteneur ACTIF.
-    // Tant qu'on n'active pas + relance, l'app continue de tourner sur l'ancien
-    // conteneur (souvent le compte réel banni), d'où « je tombe toujours sur le
-    // même compte ». On propose donc d'activer le tout nouveau conteneur — un
-    // compte vierge, non lié à ce téléphone — et de fermer l'app pour qu'elle
-    // rouvre dessus, déconnectée.
-    [self promptActivateNewContainer:target];
-}
-
-// Demande à l'utilisateur d'activer le conteneur fraîchement créé. « Activer et
-// fermer » enregistre le nouveau conteneur comme actif puis ferme l'app pour une
-// relance à froid (seule façon d'appliquer son isolation). « Plus tard » n'active
-// rien — le conteneur actif reste inchangé, donc aucune garde « conteneur périmé »
-// ne se déclenche au prochain retour d'avant-plan.
-- (void)promptActivateNewContainer:(IVContainer *)target {
-    NSString *msg = [NSString stringWithFormat:
-        @"« %@ » est un tout nouveau compte : vierge, déconnecté et non lié à ce "
-        @"téléphone (appareil, identifiants et session distincts).\n\n"
-        @"Pour l'ouvrir, l'app va se fermer — rouvre-la et elle démarrera "
-        @"directement sur ce conteneur.", target.name];
-    UIAlertController *a =
-        [UIAlertController alertControllerWithTitle:@"Conteneur créé"
-                                            message:msg
-                                     preferredStyle:UIAlertControllerStyleAlert];
-    a.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    a.view.tintColor = IVTheme.accent;
-
-    IVContainerStore *store = [IVContainerStore shared];
-    [a addAction:[UIAlertAction actionWithTitle:@"Activer et fermer"
-                                          style:UIAlertActionStyleDefault
-                                        handler:^(UIAlertAction *x) {
-        if (![store setActiveCID:target.cid]) { [self warnSaveFailed]; return; }
-        IVCloseAppForRelaunch();
-    }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"Plus tard"
-                                          style:UIAlertActionStyleCancel
-                                        handler:^(UIAlertAction *x) {
-        [self dismissViewControllerAnimated:YES completion:nil];
-    }]];
-    [self presentViewController:a animated:YES completion:nil];
+    // Création comme édition : le conteneur est enregistré, on revient simplement
+    // au panneau (comportement historique rétabli en build-11, à la demande de
+    // l'utilisateur). Créer un conteneur ne fait que l'AJOUTER à la liste ; pour
+    // l'activer, l'utilisateur tape la ligne puis « Activer ce conteneur »
+    // (IVPanelVC.activate: persiste le cid actif puis ferme l'app pour une relance
+    // à froid). Plus aucun pop-up « Activer et fermer / Plus tard » après
+    // l'enregistrement.
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)warnSaveFailed {

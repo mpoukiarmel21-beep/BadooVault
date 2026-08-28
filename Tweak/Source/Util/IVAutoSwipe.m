@@ -5,16 +5,21 @@
 
 // Best-effort keyword sets (lowercased substring match over an element's
 // accessibilityIdentifier + accessibilityLabel + button title). No Badoo private
-// headers exist, so these are heuristics tuned to Badoo's visible/ax strings.
-// Bare "yes"/"no"/"non" are intentionally excluded — they match unrelated words
-// ("yesterday", "notification") and would mis-tap.
-static NSArray<NSString *> *IVLikeKeywords(void)    { return @[@"like", @"heart", @"jaime", @"vote_yes", @"yes_vote", @"favorite", @"btn_yes", @"coeur"]; }
-static NSArray<NSString *> *IVDislikeKeywords(void) { return @[@"dislike", @"pass", @"nope", @"vote_no", @"no_vote", @"reject", @"btn_no", @"croix", @"skip"]; }
-// Controls we must never mistake for like/dislike (nav, boost, super-like, chat…).
-static NSArray<NSString *> *IVSwipeAvoidKeywords(void){ return @[@"super", @"boost", @"rewind", @"undo", @"back", @"settings", @"profile", @"filter", @"menu", @"tab", @"spotlight", @"message", @"chat", @"crush", @"gift"]; }
-static NSArray<NSString *> *IVMatchKeywords(void)   { return @[@"match", @"vous vous plaisez", @"you matched", @"c'est un match", @"it's a match", @"mutual"]; }
-static NSArray<NSString *> *IVSendKeywords(void)    { return @[@"send", @"envoyer", @"envoi"]; }
-static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"continuer", @"keep", @"garder", @"swip", @"later", @"plus tard", @"discuter", @"chat", @"fermer", @"close"]; }
+// headers exist, so these are heuristics tuned to Badoo's visible/ax strings and
+// broadened for EN/FR/ES. Bare "yes"/"no"/"non"/"ok" are kept OUT of the substring
+// sets — they match unrelated words ("yesterday","notification","smoke","broke") and
+// would mis-tap; a lone OK button is caught by an exact-title pass instead.
+static NSArray<NSString *> *IVLikeKeywords(void)    { return @[@"like", @"heart", @"jaime", @"j'aime", @"vote_yes", @"yes_vote", @"favorite", @"btn_yes", @"coeur", @"cœur", @"me gusta"]; }
+static NSArray<NSString *> *IVDislikeKeywords(void) { return @[@"dislike", @"pass", @"nope", @"vote_no", @"no_vote", @"reject", @"btn_no", @"croix", @"skip", @"passer", @"no me gusta"]; }
+static NSArray<NSString *> *IVSwipeAvoidKeywords(void){ return @[@"super", @"boost", @"rewind", @"undo", @"back", @"retour", @"settings", @"réglage", @"reglage", @"ajustes", @"profile", @"profil", @"filter", @"filtre", @"menu", @"tab", @"onglet", @"spotlight", @"message", @"chat", @"crush", @"gift", @"cadeau", @"buy", @"acheter", @"premium", @"upgrade"]; }
+static NSArray<NSString *> *IVMatchKeywords(void)   { return @[@"match", @"it's a match", @"its a match", @"un match", @"nouveau match", @"new match", @"vous vous plaisez", @"vous plaisez", @"you matched", @"c'est un match", @"mutual", @"you like each other", @"you both like", @"tu plais", @"es un match", @"hiciste match", @"nuevo match"]; }
+static NSArray<NSString *> *IVMsgCTAKeywords(void)  { return @[@"send a message", @"send message", @"envoyer un message", @"say hi", @"say hello", @"dire bonjour", @"écrire", @"ecrire", @"start chatting", @"discuter", @"say something", @"escribir", @"enviar mensaje", @"send hi"]; }
+static NSArray<NSString *> *IVSendKeywords(void)    { return @[@"send", @"envoyer", @"envoi", @"enviar"]; }
+static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"continuer", @"keep swiping", @"keep playing", @"back to swiping", @"garder", @"maybe later", @"later", @"plus tard", @"not now", @"pas maintenant", @"fermer", @"close", @"got it", @"compris", @"no thanks", @"non merci", @"dismiss", @"seguir", @"continuar", @"cerrar", @"ahora no", @"d'accord", @"okay"]; }
+// Never tap these on an interruptive popup — monetization / destructive / nav.
+static NSArray<NSString *> *IVMoneyAvoidKeywords(void){ return @[@"buy", @"purchase", @"subscribe", @"abonn", @"acheter", @"premium", @"upgrade", @"payer", @"pay", @"restore", @"unlock", @"offer", @"discount", @"boost", @"superlike", @"super like", @"delete", @"supprimer", @"block", @"bloquer", @"report", @"signaler", @"logout", @"déconnex", @"deconnex", @"settings", @"réglage", @"reglage"]; }
+// Lone confirm titles matched EXACTLY (trimmed button title only).
+static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @"ok!", @"d'accord", @"j'ai compris", @"got it"]; }
 
 @implementation IVAutoSwipe {
     BOOL _running;
@@ -25,8 +30,13 @@ static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"co
     NSInteger _likePercent;// 0..100 — probability an action is a LIKE
     NSInteger _done;
     NSInteger _gen;        // generation token — bumping it cancels pending ticks
+    // Gesture health: a synthesized swipe that leaves the card unmoved means gestures
+    // are ineffective on this Badoo build → fall back to buttons for the rest of the run.
+    BOOL _gestureBroken;
+    __weak UIView *_pendingCard;
+    CGPoint _pendingCardCenter;
+    BOOL _havePendingCard;
 }
-
 + (instancetype)shared {
     static IVAutoSwipe *i; static dispatch_once_t o;
     dispatch_once(&o, ^{ i = [self new]; });
@@ -44,12 +54,15 @@ static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"co
     _method = (c.autoSwipeMethod == 1) ? 1 : 0;
     _likePercent = c.autoSwipeLikePercent < 0 ? 0 : (c.autoSwipeLikePercent > 100 ? 100 : c.autoSwipeLikePercent);
     _done = 0;
+    _gestureBroken = NO;
+    _havePendingCard = NO;
+    _pendingCard = nil;
     _running = YES;
     _gen++;
     IVLog(@"auto-swipe: START cid=%@ count=%ld delay=[%.1f,%.1f] method=%@ like=%ld%% msgs=%lu",
           c.cid, (long)_count, _min, _max, _method == 1 ? @"gestes" : @"boutons",
           (long)_likePercent, (unsigned long)_messages.count);
-    [self scheduleNextTick];   // first tick after a delay: lets the panel dismiss
+    [self scheduleNextTick];   // first tick after a delay: lets the panel dismiss first
 }
 
 - (void)stop {
@@ -62,12 +75,10 @@ static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"co
 #pragma mark - Tick loop
 
 - (double)randomDelay {
-    double lo = _min, hi = _max;
-    double span = hi - lo;
+    double span = _max - _min;
     double r = span > 0 ? ((double)arc4random_uniform(1000000) / 1000000.0) * span : 0;
-    return lo + r;
+    return _min + r;
 }
-
 - (void)scheduleNextTick {
     if (!_running) return;
     NSInteger gen = _gen;
@@ -82,18 +93,31 @@ static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"co
     if (!_running) return;
     UIApplication *app = UIApplication.sharedApplication;
     if (app.applicationState != UIApplicationStateActive) {
-        [self scheduleNextTick];   // backgrounded — wait, act only when foreground-active
+        [self scheduleNextTick];   // backgrounded — act only when foreground-active
         return;
     }
-    UIView *root = [self hostTopViewController].view;
-    if (!root) { IVLog(@"auto-swipe: no host view this tick"); [self scheduleNextTick]; return; }
 
-    // A match popup takes priority: handle it (send a phrase / dismiss) before swiping.
-    if ([self handleMatchPopupInView:root]) { [self scheduleNextTick]; return; }
+    // One scan of Badoo's live UI per tick: every visible foreground window except our
+    // own overlay + the keyboard windows, highest windowLevel first so popups (which
+    // sit above the card stack) are seen before the encounters screen underneath.
+    NSArray<UIWindow *> *windows = [self scanWindows];
+    if (!windows.count) { IVLog(@"auto-swipe: no host window this tick"); [self scheduleNextTick]; return; }
+    NSMutableArray<UIControl *> *controls = [NSMutableArray new];
+    NSMutableArray<UILabel *> *labels = [NSMutableArray new];
+    for (UIWindow *w in windows) {
+        [self collectControlsIn:w into:controls];
+        [self collectLabelsIn:w into:labels];
+    }
 
-    // Roll the like/dislike ratio for this profile. left→dislike, right→like.
+    // 1) A match screen takes priority: send a phrase (or open the composer), else dismiss.
+    if ([self handleMatchInControls:controls labels:labels windows:windows]) { [self scheduleNextTick]; return; }
+    // 2) A generic interruptive popup blocks swiping: tap its dismiss/continue button,
+    //    never a monetization/destructive one. No-ops on the plain encounters screen.
+    if ([self handleInterruptivePopupInControls:controls]) { [self scheduleNextTick]; return; }
+
+    // 3) Otherwise perform one swipe.
     BOOL wantLike = ((NSInteger)arc4random_uniform(100) < _likePercent);
-    BOOL acted = [self performAction:wantLike inView:root];
+    BOOL acted = [self performAction:wantLike controls:controls windows:windows];
     if (acted) {
         _done++;
         IVLog(@"auto-swipe: %@ (%ld%@)", wantLike ? @"like" : @"dislike", (long)_done,
@@ -104,28 +128,53 @@ static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"co
     }
     [self scheduleNextTick];
 }
-
 #pragma mark - Action dispatch (method + like/dislike)
 
-// Perform one swipe action. In "gestes" mode, synthesize a finger swipe on the top
-// card (right = like, left = dislike) and, if synthesis is unavailable, fall back
-// to tapping the buttons. In "boutons" mode, tap Badoo's like/dislike control. If
-// the desired control isn't found, try the opposite so the queue keeps advancing.
-// Returns YES if some action was taken.
-- (BOOL)performAction:(BOOL)wantLike inView:(UIView *)root {
-    if (_method == 1) {
-        if ([self synthesizeSwipeLike:wantLike inView:root]) return YES;
-        IVLog(@"auto-swipe: gesture synthesis unavailable — falling back to buttons");
+// One swipe action. In "gestes" mode: first verify LAST tick's synthesized swipe
+// actually moved the card — if it left the card untouched (still on screen at the same
+// center), gestures are ineffective on this build → switch to buttons permanently
+// (this is the "l'option geste ne fonctionne pas, juste les boutons" fix: instead of
+// silently doing nothing, we detect the no-op and fall back). Otherwise synthesize a
+// finger swipe on the top card and remember it so the next tick can verify movement.
+- (BOOL)performAction:(BOOL)wantLike controls:(NSArray<UIControl *> *)controls windows:(NSArray<UIWindow *> *)windows {
+    if (_method == 1 && !_gestureBroken) {
+        if (_havePendingCard) {
+            UIView *pend = _pendingCard;
+            BOOL moved = (!pend || pend.window == nil ||
+                          fabs(pend.center.x - _pendingCardCenter.x) > 12.0 ||
+                          fabs(pend.center.y - _pendingCardCenter.y) > 12.0);
+            _havePendingCard = NO;
+            _pendingCard = nil;
+            if (!moved) {
+                _gestureBroken = YES;
+                IVLog(@"auto-swipe: gesture had no effect (card unmoved) — buttons from now on");
+            }
+        }
+        if (!_gestureBroken) {
+            UIView *card = [self findCardInWindows:windows];
+            if (card && card.window) {
+                if ([self synthesizeSwipeOnCard:card like:wantLike]) {
+                    _pendingCard = card;
+                    _pendingCardCenter = card.center;
+                    _havePendingCard = YES;
+                    return YES;
+                }
+                _gestureBroken = YES;
+                IVLog(@"auto-swipe: gesture synthesis unavailable — buttons from now on");
+            } else {
+                IVLog(@"auto-swipe: no swipeable card found — using buttons this tick");
+            }
+        }
     }
-    return [self tapVoteLike:wantLike inView:root];
+    return [self tapVoteLike:wantLike controls:controls];
 }
 
 // Tap Badoo's own like/dislike control; falls through to the opposite vote if the
-// desired one can't be located (keeps the profile queue moving rather than stalling).
-- (BOOL)tapVoteLike:(BOOL)wantLike inView:(UIView *)root {
-    UIControl *primary = wantLike ? [self findLikeControlInView:root] : [self findDislikeControlInView:root];
+// desired one can't be located, so the queue keeps moving rather than stalling.
+- (BOOL)tapVoteLike:(BOOL)wantLike controls:(NSArray<UIControl *> *)controls {
+    UIControl *primary = wantLike ? [self findLikeControlIn:controls] : [self findDislikeControlIn:controls];
     if (primary) { [self tapControl:primary]; return YES; }
-    UIControl *fallback = wantLike ? [self findDislikeControlInView:root] : [self findLikeControlInView:root];
+    UIControl *fallback = wantLike ? [self findDislikeControlIn:controls] : [self findLikeControlIn:controls];
     if (fallback) {
         IVLog(@"auto-swipe: desired %@ control missing — used opposite to advance", wantLike ? @"like" : @"dislike");
         [self tapControl:fallback];
@@ -133,272 +182,299 @@ static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"co
     }
     return NO;
 }
+#pragma mark - Window scanning (multi-window, popups first)
 
-#pragma mark - Host UI resolution
-
-// The frontmost view controller of Badoo's OWN UI — the highest normal-level,
-// visible window of the foreground-active scene, EXCLUDING our floating-button
-// overlay (IVOverlayWindow, which sits above UIWindowLevelAlert). Then drill to
-// the topmost presented controller so we search whatever is actually on screen.
-- (UIViewController *)hostTopViewController {
-    UIWindow *best = nil;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
-        for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-            if (w.hidden || w.alpha < 0.05) continue;
-            if ([NSStringFromClass(w.class) containsString:@"IVOverlay"]) continue;  // ours
-            if (w.windowLevel > UIWindowLevelNormal + 100) continue;                 // skip alert overlays
-            if (!best || w.windowLevel >= best.windowLevel) best = w;
+// Every foreground-active window that belongs to Badoo's own UI, EXCLUDING our overlay
+// (IVOverlayWindow) and the system keyboard/text-effect windows. Sorted by windowLevel
+// DESCENDING so alerts / match modals / "It's a Match" overlays (which UIKit hosts on
+// higher-level windows) are scanned before the encounters screen below them — the old
+// single-window scan missed every popup, which is why "il n'arrive pas à détecter les
+// popup de Badoo".
+- (NSArray<UIWindow *> *)scanWindows {
+    NSMutableArray<UIWindow *> *out = [NSMutableArray new];
+    for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+        if (![s isKindOfClass:[UIWindowScene class]]) continue;
+        if (s.activationState != UISceneActivationStateForegroundActive) continue;
+        for (UIWindow *w in ((UIWindowScene *)s).windows) {
+            if (w.hidden || w.alpha < 0.01) continue;
+            NSString *cls = NSStringFromClass([w class]);
+            if ([cls isEqualToString:@"IVOverlayWindow"]) continue;                 // our own UI
+            if ([cls containsString:@"Keyboard"] || [cls containsString:@"TextEffects"]) continue;
+            [out addObject:w];
         }
     }
-    UIViewController *vc = best.rootViewController;
-    while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed) {
-        vc = vc.presentedViewController;
-    }
-    return vc;
+    [out sortUsingComparator:^NSComparisonResult(UIWindow *a, UIWindow *b) {
+        if (a.windowLevel > b.windowLevel) return NSOrderedAscending;   // higher level first
+        if (a.windowLevel < b.windowLevel) return NSOrderedDescending;
+        return NSOrderedSame;
+    }];
+    return out;
 }
 
-#pragma mark - Match popup
+- (void)collectControlsIn:(UIView *)v into:(NSMutableArray<UIControl *> *)out {
+    if (v.hidden || v.alpha < 0.01) return;
+    if ([v isKindOfClass:[UIControl class]] && ((UIControl *)v).enabled && v.userInteractionEnabled) {
+        [out addObject:(UIControl *)v];
+    }
+    for (UIView *sub in v.subviews) [self collectControlsIn:sub into:out];
+}
 
-// Returns YES if a "match" popup was detected and handled (message sent, or the
-// popup dismissed so swiping can resume). NO means no match popup this tick.
-- (BOOL)handleMatchPopupInView:(UIView *)root {
-    NSMutableArray<UILabel *> *labels = [NSMutableArray new];
-    [self collectLabelsIn:root into:labels];
+- (void)collectLabelsIn:(UIView *)v into:(NSMutableArray<UILabel *> *)out {
+    if (v.hidden || v.alpha < 0.01) return;
+    if ([v isKindOfClass:[UILabel class]]) [out addObject:(UILabel *)v];
+    for (UIView *sub in v.subviews) [self collectLabelsIn:sub into:out];
+}
+#pragma mark - Match screen + interruptive popups
+
+// A match screen is present if any visible label/control identity matches a match
+// keyword. Two-step flow, per the user's request ("il clique sur match et clique sur
+// envoyer un message et inscrire le message ... choisir une ligne au hasard et cliquer
+// sur envoyer"): composer open → type a RANDOM phrase + Send; else tap the "send a
+// message" CTA (next tick types+sends); else dismiss so the queue isn't blocked.
+- (BOOL)handleMatchInControls:(NSArray<UIControl *> *)controls
+                       labels:(NSArray<UILabel *> *)labels
+                      windows:(NSArray<UIWindow *> *)windows {
     BOOL isMatch = NO;
-    for (UILabel *l in labels) {
-        if (l.hidden || l.alpha < 0.05 || !l.text.length) continue;
-        if ([self text:l.text.lowercaseString matchesAny:IVMatchKeywords()]) { isMatch = YES; break; }
+    NSArray<NSString *> *mk = IVMatchKeywords();
+    for (UILabel *l in labels) { if ([self text:l.text matchesAny:mk]) { isMatch = YES; break; } }
+    if (!isMatch) {
+        for (UIControl *c in controls) { if ([self text:[self identityFor:c] matchesAny:mk]) { isMatch = YES; break; } }
     }
     if (!isMatch) return NO;
-    IVLog(@"auto-swipe: MATCH popup detected");
 
-    if (_messages.count) {
-        UIView *field = [self findTextInputIn:root];
-        if (field) {
-            NSString *phrase = _messages[arc4random_uniform((uint32_t)_messages.count)];
-            [field becomeFirstResponder];
-            if ([field conformsToProtocol:@protocol(UIKeyInput)]) [(id<UIKeyInput>)field insertText:phrase];
-            IVLog(@"auto-swipe: typed match message: %@", phrase);
-            UIControl *send = [self findControlInView:root keywords:IVSendKeywords() avoid:nil];
-            if (send) { [self tapControl:send]; IVLog(@"auto-swipe: tapped send"); return YES; }
-            IVLog(@"auto-swipe: send control not found — message left typed");
-            return YES;
-        }
-        IVLog(@"auto-swipe: no editable text field in match popup");
+    // No phrases configured → just clear the modal and keep swiping.
+    if (!_messages.count) {
+        UIControl *cont = [self findControlIn:controls keywords:IVContinueKeywords() avoid:IVMoneyAvoidKeywords()];
+        if (!cont) cont = [self findExactTitleControlIn:controls titles:IVOKTitles()];
+        if (cont) { IVLog(@"auto-swipe: match — no phrase set, dismissing"); [self tapControl:cont]; }
+        return YES;
     }
-    // No message configured / no field: dismiss the match so the loop can continue.
-    UIControl *cont = [self findControlInView:root keywords:IVContinueKeywords() avoid:nil];
-    if (cont) { [self tapControl:cont]; IVLog(@"auto-swipe: dismissed match popup"); }
+    // Composer already open? Type a random phrase + tap Send.
+    UITextView *tv = nil; UITextField *tf = nil;
+    UIView *input = [self findTextInputInWindows:windows textView:&tv textField:&tf];
+    if (input) {
+        NSString *phrase = _messages[arc4random_uniform((uint32_t)_messages.count)];
+        if (tv) tv.text = phrase; else if (tf) tf.text = phrase;
+        if (tf) [tf sendActionsForControlEvents:UIControlEventEditingChanged];   // enable Send
+        UIControl *send = [self findControlIn:controls keywords:IVSendKeywords() avoid:IVMoneyAvoidKeywords()];
+        if (send) { IVLog(@"auto-swipe: match — typed phrase, sending"); [self tapControl:send]; }
+        else IVLog(@"auto-swipe: match — phrase typed but no Send control found");
+        return YES;
+    }
+
+    // Composer not open: tap the CTA to open it (next tick types + sends).
+    UIControl *cta = [self findControlIn:controls keywords:IVMsgCTAKeywords() avoid:IVMoneyAvoidKeywords()];
+    if (cta) { IVLog(@"auto-swipe: match — opening message composer"); [self tapControl:cta]; return YES; }
+
+    // No composer, no CTA → dismiss so swiping resumes.
+    UIControl *cont = [self findControlIn:controls keywords:IVContinueKeywords() avoid:IVMoneyAvoidKeywords()];
+    if (!cont) cont = [self findExactTitleControlIn:controls titles:IVOKTitles()];
+    if (cont) { IVLog(@"auto-swipe: match — no composer/CTA, dismissing"); [self tapControl:cont]; }
     return YES;
 }
 
-#pragma mark - Control / label search
-
-// Concatenate keyword arrays into a single avoid-set.
-static NSArray<NSString *> *IVConcat(NSArray<NSString *> *a, NSArray<NSString *> *b) {
-    NSMutableArray<NSString *> *m = [NSMutableArray arrayWithArray:a];
-    [m addObjectsFromArray:b];
-    return m;
+// A generic interruptive popup (rate-us, out-of-likes, "you've been busy", a permission
+// nag, an upsell that also offers a decline, etc.) blocks the card stack. Tap a
+// continue/close/"maybe later" button, or a lone exact-title OK — but NEVER a
+// monetization or destructive one, so we don't buy Premium or delete anything. Returns
+// NO on the plain encounters screen (no such control), letting the swipe run.
+- (BOOL)handleInterruptivePopupInControls:(NSArray<UIControl *> *)controls {
+    UIControl *c = [self findControlIn:controls keywords:IVContinueKeywords() avoid:IVMoneyAvoidKeywords()];
+    if (!c) c = [self findExactTitleControlIn:controls titles:IVOKTitles()];
+    if (!c) return NO;
+    IVLog(@"auto-swipe: dismissing interruptive popup");
+    [self tapControl:c];
+    return YES;
 }
+#pragma mark - Control / card / text finders
 
-// The like control must not be confused with the dislike control or any nav/boost/
-// super-like control, so avoid both keyword sets.
-- (UIControl *)findLikeControlInView:(UIView *)root {
-    return [self findControlInView:root
-                          keywords:IVLikeKeywords()
-                             avoid:IVConcat(IVDislikeKeywords(), IVSwipeAvoidKeywords())];
-}
-
-// Symmetric dislike finder — avoid the like set and the nav/boost/super-like set.
-- (UIControl *)findDislikeControlInView:(UIView *)root {
-    return [self findControlInView:root
-                          keywords:IVDislikeKeywords()
-                             avoid:IVConcat(IVLikeKeywords(), IVSwipeAvoidKeywords())];
-}
-
-// First visible, enabled, reasonably-sized UIControl whose identity string matches
-// any `keywords` and none of `avoid`.
-- (UIControl *)findControlInView:(UIView *)root keywords:(NSArray<NSString *> *)keywords avoid:(NSArray<NSString *> *)avoid {
-    NSMutableArray<UIControl *> *controls = [NSMutableArray new];
-    [self collectControlsIn:root into:controls];
-    for (UIControl *ctl in controls) {
-        if (ctl.hidden || ctl.alpha < 0.05 || !ctl.isUserInteractionEnabled || !ctl.enabled) continue;
-        if (ctl.bounds.size.width < 20 || ctl.bounds.size.height < 20) continue;
-        NSString *id = [self identityFor:ctl];
-        if (!id.length) continue;
-        if (avoid && [self text:id matchesAny:avoid]) continue;
-        if ([self text:id matchesAny:keywords]) return ctl;
+// First enabled control whose identity contains ANY keyword and NONE of the avoid
+// terms. Scans in collection order (highest-window-first, set by the tick).
+- (UIControl *)findControlIn:(NSArray<UIControl *> *)controls
+                    keywords:(NSArray<NSString *> *)keys
+                       avoid:(NSArray<NSString *> *)avoid {
+    for (UIControl *c in controls) {
+        NSString *ident = [self identityFor:c];
+        if (![self text:ident matchesAny:keys]) continue;
+        if (avoid && [self text:ident matchesAny:avoid]) continue;
+        return c;
     }
     return nil;
 }
 
-// First visible editable text input (UITextField / editable UITextView).
-- (UIView *)findTextInputIn:(UIView *)root {
-    if (root.hidden || root.alpha < 0.05) return nil;
-    if ([root isKindOfClass:UITextField.class] && ((UITextField *)root).isEnabled) return root;
-    if ([root isKindOfClass:UITextView.class] && ((UITextView *)root).isEditable) return root;
-    for (UIView *sub in root.subviews) {
-        UIView *hit = [self findTextInputIn:sub];
-        if (hit) return hit;
+// A button whose TRIMMED title equals one of the exact titles (case-insensitive) — used
+// to catch a lone "OK" / "D'accord" confirm without the substring hazard of matching
+// "ok" inside "smoke"/"broke".
+- (UIControl *)findExactTitleControlIn:(NSArray<UIControl *> *)controls
+                                titles:(NSArray<NSString *> *)titles {
+    for (UIControl *c in controls) {
+        if (![c isKindOfClass:[UIButton class]]) continue;
+        NSString *t = [[(UIButton *)c currentTitle]
+                       stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].lowercaseString;
+        if (!t.length) continue;
+        for (NSString *want in titles) { if ([t isEqualToString:want]) return c; }
     }
     return nil;
 }
 
-#pragma mark - Gesture synthesis ("Gestes" mode — best-effort)
-
-// Locate the swipeable profile card: the largest visible non-control view that
-// carries a UIPanGestureRecognizer (Badoo's card stack drives like/dislike from a
-// pan). Falls back to the largest big central view if no pan recognizer is exposed.
-- (UIView *)findCardInView:(UIView *)root {
-    UIView *bestPan = nil; CGFloat bestPanArea = 0;
-    UIView *bestBig = nil; CGFloat bestBigArea = 0;
-    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:root];
-    while (stack.count) {
-        UIView *v = stack.lastObject; [stack removeLastObject];
-        if (!v.hidden && v.alpha >= 0.05) {
-            CGSize sz = v.bounds.size;
-            CGFloat area = sz.width * sz.height;
-            if (sz.width > 180 && sz.height > 220 && ![v isKindOfClass:UIControl.class]) {
-                BOOL hasPan = NO;
-                for (UIGestureRecognizer *g in v.gestureRecognizers) {
-                    if ([g isKindOfClass:UIPanGestureRecognizer.class]) { hasPan = YES; break; }
-                }
-                if (hasPan && area > bestPanArea) { bestPanArea = area; bestPan = v; }
-                if (area > bestBigArea) { bestBigArea = area; bestBig = v; }
-            }
-            for (UIView *sub in v.subviews) [stack addObject:sub];
-        }
-    }
-    return bestPan ?: bestBig;
+- (UIControl *)findLikeControlIn:(NSArray<UIControl *> *)controls {
+    return [self findControlIn:controls keywords:IVLikeKeywords() avoid:IVSwipeAvoidKeywords()];
 }
 
-// Drive a real horizontal finger swipe over the top card (right = like, left =
-// dislike) by synthesizing UITouch/UIEvent through private UIKit selectors. Every
-// selector is respondsToSelector-guarded and the whole path is @try-wrapped:
-// on ANY unavailability we return NO so performAction: falls back to buttons.
-- (BOOL)synthesizeSwipeLike:(BOOL)wantLike inView:(UIView *)root {
-    UIView *card = [self findCardInView:root];
+- (UIControl *)findDislikeControlIn:(NSArray<UIControl *> *)controls {
+    return [self findControlIn:controls keywords:IVDislikeKeywords() avoid:IVSwipeAvoidKeywords()];
+}
+// The top swipe card: the largest plausible card-shaped container across the scanned
+// windows — a big, non-scrolling slab occupying 30–92% of the screen (not the whole
+// window, not a list/collection). We only need one to swipe on and verify movement.
+- (UIView *)findCardInWindows:(NSArray<UIWindow *> *)windows {
+    CGRect screen = UIScreen.mainScreen.bounds;
+    CGFloat screenArea = screen.size.width * screen.size.height;
+    if (screenArea <= 0) return nil;
+    UIView *best = nil;
+    CGFloat bestArea = 0;
+    for (UIWindow *w in windows) {
+        [self scanCardIn:w screenArea:screenArea best:&best bestArea:&bestArea depth:0];
+    }
+    return best;
+}
+
+- (void)scanCardIn:(UIView *)v screenArea:(CGFloat)screenArea
+              best:(UIView * __strong *)best bestArea:(CGFloat *)bestArea depth:(int)depth {
+    if (v.hidden || v.alpha < 0.2 || depth > 40) return;
+    CGSize sz = v.bounds.size;
+    CGFloat area = sz.width * sz.height;
+    CGFloat frac = area / screenArea;
+    BOOL plausible = (frac >= 0.30 && frac <= 0.92 &&
+                      ![v isKindOfClass:[UIControl class]] &&
+                      ![v isKindOfClass:[UIScrollView class]] &&
+                      ![v isKindOfClass:[UICollectionView class]] &&
+                      ![v isKindOfClass:[UITableView class]]);
+    if (plausible && area >= *bestArea) { *best = v; *bestArea = area; }
+    for (UIView *sub in v.subviews) [self scanCardIn:sub screenArea:screenArea best:best bestArea:bestArea depth:depth + 1];
+}
+// First on-screen text input across the windows. Returns the view and, via out-params,
+// its concrete kind so the caller can set .text on the right type.
+- (UIView *)findTextInputInWindows:(NSArray<UIWindow *> *)windows
+                          textView:(UITextView * __autoreleasing *)tvOut
+                         textField:(UITextField * __autoreleasing *)tfOut {
+    for (UIWindow *w in windows) {
+        UIView *found = [self scanTextInputIn:w textView:tvOut textField:tfOut];
+        if (found) return found;
+    }
+    return nil;
+}
+
+- (UIView *)scanTextInputIn:(UIView *)v
+                   textView:(UITextView * __autoreleasing *)tvOut
+                  textField:(UITextField * __autoreleasing *)tfOut {
+    if (v.hidden || v.alpha < 0.01) return nil;
+    if ([v isKindOfClass:[UITextView class]] && v.userInteractionEnabled) {
+        if (tvOut) *tvOut = (UITextView *)v; return v;
+    }
+    if ([v isKindOfClass:[UITextField class]] && ((UITextField *)v).enabled) {
+        if (tfOut) *tfOut = (UITextField *)v; return v;
+    }
+    for (UIView *sub in v.subviews) {
+        UIView *f = [self scanTextInputIn:sub textView:tvOut textField:tfOut];
+        if (f) return f;
+    }
+    return nil;
+}
+#pragma mark - Gesture synthesis (private UITouch/UIEvent, best-effort)
+
+// Synthesize a horizontal finger swipe across the card (right = like, left = dislike)
+// using private UITouch/UIEvent selectors. Every selector is respondsToSelector-guarded
+// and wrapped in @try; on ANY gap we return NO so performAction: switches to buttons.
+// Whether it actually worked is verified NEXT tick by checking the card moved.
+- (BOOL)synthesizeSwipeOnCard:(UIView *)card like:(BOOL)like {
     UIWindow *win = card.window;
-    if (!card || !win) return NO;
-
+    if (!win) return NO;
+    Class touchCls = NSClassFromString(@"UITouch");
     UIApplication *app = UIApplication.sharedApplication;
-    SEL touchesEventSel = NSSelectorFromString(@"_touchesEvent");
-    SEL setLocSel = NSSelectorFromString(@"_setLocationInWindow:resetPrevious:");
-    SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
-    SEL setWindowSel = NSSelectorFromString(@"setWindow:");
-    SEL setViewSel = NSSelectorFromString(@"setView:");
-    SEL setTapSel = NSSelectorFromString(@"setTapCount:");
-    SEL setTSSel = NSSelectorFromString(@"setTimestamp:");
-    SEL addTouchSel = NSSelectorFromString(@"_addTouch:forDelayedDelivery:");
+    SEL selPhase = NSSelectorFromString(@"setPhase:");
+    SEL selLoc   = NSSelectorFromString(@"_setLocationInWindow:resetPrevious:");
+    SEL selWin   = NSSelectorFromString(@"setWindow:");
+    SEL selView  = NSSelectorFromString(@"setView:");
+    SEL selTap   = NSSelectorFromString(@"setTapCount:");
+    SEL selTs    = NSSelectorFromString(@"setTimestamp:");
+    SEL selEvt   = NSSelectorFromString(@"_touchesEvent");
+    SEL selAdd   = NSSelectorFromString(@"_addTouch:forDelayedDelivery:");
+    SEL selClear = NSSelectorFromString(@"_clearTouches");
+    UITouch *touch = touchCls ? [touchCls new] : nil;
+    if (!touch || ![touch respondsToSelector:selPhase] || ![touch respondsToSelector:selLoc]
+        || ![touch respondsToSelector:selWin] || ![touch respondsToSelector:selView]
+        || ![app respondsToSelector:selEvt]) return NO;
 
-    UITouch *touch = [[UITouch alloc] init];
-    if (![app respondsToSelector:touchesEventSel] ||
-        ![touch respondsToSelector:setLocSel] ||
-        ![touch respondsToSelector:setPhaseSel] ||
-        ![touch respondsToSelector:setWindowSel] ||
-        ![touch respondsToSelector:setViewSel] ||
-        ![touch respondsToSelector:setTapSel] ||
-        ![touch respondsToSelector:setTSSel]) {
-        return NO;
+    CGRect b = card.bounds;
+    CGPoint startInWin = [card convertPoint:CGPointMake(b.size.width * 0.5, b.size.height * 0.55) toView:win];
+    UIView *hit = [win hitTest:startInWin withEvent:nil] ?: card;
+    CGFloat dx = win.bounds.size.width * (like ? 0.45 : -0.45);
+    CGFloat startX = startInWin.x, y = startInWin.y;
+
+    id evt = ((id(*)(id, SEL))objc_msgSend)(app, selEvt);
+    if (!evt) return NO;
+
+    void (^send)(NSInteger, CGPoint, BOOL) = ^(NSInteger phase, CGPoint p, BOOL reset) {
+        @try {
+            ((void(*)(id, SEL, id))objc_msgSend)(touch, selWin, win);
+            ((void(*)(id, SEL, id))objc_msgSend)(touch, selView, hit);
+            if ([touch respondsToSelector:selTap]) ((void(*)(id, SEL, NSUInteger))objc_msgSend)(touch, selTap, 1);
+            if ([touch respondsToSelector:selTs])  ((void(*)(id, SEL, double))objc_msgSend)(touch, selTs, NSProcessInfo.processInfo.systemUptime);
+            ((void(*)(id, SEL, CGPoint, BOOL))objc_msgSend)(touch, selLoc, p, reset);
+            ((void(*)(id, SEL, NSInteger))objc_msgSend)(touch, selPhase, phase);
+            if ([evt respondsToSelector:selClear]) ((void(*)(id, SEL))objc_msgSend)(evt, selClear);
+            if ([evt respondsToSelector:selAdd])   ((void(*)(id, SEL, id, BOOL))objc_msgSend)(evt, selAdd, touch, NO);
+            [app sendEvent:evt];
+        } @catch (__unused NSException *e) {}
+    };
+    // Deliver began → 6 moves → ended, spaced over ~0.24s on the main queue, so the pan
+    // recognizer sees distinct timestamps/locations. Generation-guarded: stop() bumps
+    // _gen and the remaining steps become no-ops.
+    NSInteger gen = _gen;
+    const int steps = 6;
+    send(UITouchPhaseBegan, CGPointMake(startX, y), YES);
+    for (int i = 1; i <= steps; i++) {
+        double t = 0.03 * i;
+        CGFloat x = startX + dx * ((CGFloat)i / steps);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(t * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (gen != self->_gen) return;
+            send(UITouchPhaseMoved, CGPointMake(x, y), NO);
+        });
     }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * (steps + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (gen != self->_gen) return;
+        send(UITouchPhaseEnded, CGPointMake(startX + dx, y), NO);
+    });
+    return YES;
+}
+#pragma mark - Low-level helpers
 
-    @try {
-        CGRect b = [card convertRect:card.bounds toView:win];
-        CGFloat y = CGRectGetMidY(b);
-        CGFloat x0 = CGRectGetMidX(b);
-        CGFloat dx = CGRectGetWidth(b) * 0.42;
-        CGPoint start = CGPointMake(x0, y);
-        CGPoint finish = CGPointMake(wantLike ? x0 + dx : x0 - dx, y);
-
-        typedef void (*VoidObjIMP)(id, SEL, id);
-        typedef void (*VoidUIntIMP)(id, SEL, NSUInteger);
-        typedef void (*VoidDblIMP)(id, SEL, double);
-        typedef void (*VoidPtBoolIMP)(id, SEL, CGPoint, BOOL);
-
-        VoidObjIMP setWindow = (VoidObjIMP)objc_msgSend;
-        VoidObjIMP setView = (VoidObjIMP)objc_msgSend;
-        VoidUIntIMP setTap = (VoidUIntIMP)objc_msgSend;
-        VoidUIntIMP setPhase = (VoidUIntIMP)objc_msgSend;
-        VoidDblIMP setTS = (VoidDblIMP)objc_msgSend;
-        VoidPtBoolIMP setLoc = (VoidPtBoolIMP)objc_msgSend;
-
-        setWindow(touch, setWindowSel, win);
-        setView(touch, setViewSel, card);
-        setTap(touch, setTapSel, 1);
-        setTS(touch, setTSSel, [[NSProcessInfo processInfo] systemUptime]);
-        setLoc(touch, setLocSel, start, YES);
-
-        UIEvent *event = ((id (*)(id, SEL))objc_msgSend)(app, touchesEventSel);
-        if (!event) return NO;
-        BOOL canAdd = [event respondsToSelector:addTouchSel];
-
-        // UITouchPhaseBegan = 0, Moved = 1, Ended = 3.
-        setPhase(touch, setPhaseSel, 0);
-        if (canAdd) ((void (*)(id, SEL, id, BOOL))objc_msgSend)(event, addTouchSel, touch, NO);
-        [app sendEvent:event];
-
-        NSInteger steps = 12;
-        for (NSInteger i = 1; i <= steps; i++) {
-            CGFloat t = (CGFloat)i / (CGFloat)steps;
-            CGPoint p = CGPointMake(start.x + (finish.x - start.x) * t, y);
-            setLoc(touch, setLocSel, p, NO);
-            setPhase(touch, setPhaseSel, 1);
-            setTS(touch, setTSSel, [[NSProcessInfo processInfo] systemUptime]);
-            [app sendEvent:event];
-        }
-
-        setLoc(touch, setLocSel, finish, NO);
-        setPhase(touch, setPhaseSel, 3);
-        setTS(touch, setTSSel, [[NSProcessInfo processInfo] systemUptime]);
-        [app sendEvent:event];
-        return YES;
-    } @catch (__unused NSException *e) {
-        return NO;
-    }
+// Tap a control the way UIKit would: send its touch-up-inside actions. More reliable
+// than synthesizing a touch for a plain button, and enough for Badoo's like/dislike/OK.
+- (void)tapControl:(UIControl *)c {
+    if (!c) return;
+    @try { [c sendActionsForControlEvents:UIControlEventTouchUpInside]; }
+    @catch (__unused NSException *e) {}
 }
 
-- (void)tapControl:(UIControl *)ctl {
-    [ctl sendActionsForControlEvents:UIControlEventTouchUpInside];
-}
-
-#pragma mark - Recursion + string helpers
-
-- (void)collectControlsIn:(UIView *)view into:(NSMutableArray<UIControl *> *)out {
-    if (view.hidden || view.alpha < 0.05) return;
-    if ([view isKindOfClass:UIControl.class]) [out addObject:(UIControl *)view];
-    for (UIView *sub in view.subviews) [self collectControlsIn:sub into:out];
-}
-
-- (void)collectLabelsIn:(UIView *)view into:(NSMutableArray<UILabel *> *)out {
-    if (view.hidden || view.alpha < 0.05) return;
-    if ([view isKindOfClass:UILabel.class]) [out addObject:(UILabel *)view];
-    for (UIView *sub in view.subviews) [self collectLabelsIn:sub into:out];
-}
-
-// Lowercased haystack for an element: accessibilityIdentifier + accessibilityLabel
-// + (button current title). All three because Badoo labels controls inconsistently.
-- (NSString *)identityFor:(id)el {
+// Lowercased identity string for keyword matching: accessibilityIdentifier +
+// accessibilityLabel + (for buttons) the current title.
+- (NSString *)identityFor:(UIView *)v {
     NSMutableString *s = [NSMutableString new];
-    if ([el respondsToSelector:@selector(accessibilityIdentifier)]) {
-        NSString *aid = [el accessibilityIdentifier];
-        if (aid.length) [s appendFormat:@" %@", aid];
-    }
-    if ([el respondsToSelector:@selector(accessibilityLabel)]) {
-        NSString *al = [el accessibilityLabel];
-        if (al.length) [s appendFormat:@" %@", al];
-    }
-    if ([el isKindOfClass:UIButton.class]) {
-        NSString *t = [(UIButton *)el currentTitle];
-        if (t.length) [s appendFormat:@" %@", t];
+    if (v.accessibilityIdentifier.length) [s appendFormat:@"%@ ", v.accessibilityIdentifier];
+    if (v.accessibilityLabel.length)      [s appendFormat:@"%@ ", v.accessibilityLabel];
+    if ([v isKindOfClass:[UIButton class]]) {
+        NSString *t = [(UIButton *)v currentTitle];
+        if (t.length) [s appendFormat:@"%@ ", t];
     }
     return s.lowercaseString;
 }
 
-- (BOOL)text:(NSString *)hay matchesAny:(NSArray<NSString *> *)needles {
-    if (!hay.length) return NO;
-    for (NSString *n in needles) { if ([hay containsString:n]) return YES; }
+- (BOOL)text:(NSString *)text matchesAny:(NSArray<NSString *> *)keys {
+    if (!text.length) return NO;
+    NSString *low = text.lowercaseString;
+    for (NSString *k in keys) { if (k.length && [low containsString:k]) return YES; }
     return NO;
 }
 

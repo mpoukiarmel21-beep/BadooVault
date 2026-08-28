@@ -1,5 +1,6 @@
 #import "IVAutoSwipeVC.h"
 #import "IVTheme.h"
+#import "IVFloatingButton.h"
 #import "../Core/IVContainerStore.h"
 #import "../Util/IVAutoSwipe.h"
 #import "../Util/IVDiagnostics.h"
@@ -279,7 +280,11 @@
 }
 
 // "Démarrer": persist, start the engine, and dismiss the WHOLE panel so Badoo's
-// own UI is frontmost for the bot to drive. "Arrêter": stop the engine, stay.
+// own UI is frontmost for the bot to drive. The floating button stays available:
+// a programmatic dismiss fires neither the panel's onClose nor the presentation
+// delegate, so the button (hidden while the panel was up) is restored explicitly
+// in the dismiss completion — "les Swipe démarrent et le menu reste en place".
+// "Arrêter": stop the engine, stay.
 - (void)toggleRun {
     [self.view endEditing:YES];
     if ([IVAutoSwipe shared].isRunning) {
@@ -289,7 +294,9 @@
     }
     if (![self persistConfigEnabled:YES]) { [self warn]; return; }
     [[IVAutoSwipe shared] startWithContainer:self.container];
-    [self dismissViewControllerAnimated:YES completion:nil];
+    [self dismissViewControllerAnimated:YES completion:^{
+        [[IVFloatingButton shared] restoreButtonAfterExternalDismiss];
+    }];
 }
 
 @end

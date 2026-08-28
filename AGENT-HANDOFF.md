@@ -26,6 +26,14 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
+Claude Code — 2026-08-28 (~01:10) : **prise de main build-11** (rapport 3 problèmes) sur
+`master`. Fichiers en cours d'édition : `Tweak/Source/UI/IVPanelVC.m` (#1 icône engrenage),
+`Tweak/Source/UI/IVCreateVC.m` (#2 retrait pop-up « Activer et fermer »),
+`Tweak/Source/Util/IVAutoSwipe.m` (#3b/#3c détection popups/gestes),
+`Tweak/Source/UI/IVFloatingButton.{h,m}` + `Tweak/Source/UI/IVAutoSwipeVC.m` (#3a bouton
+reste visible). Aucun autre agent actif. Recon + recherche web faites, diagnostic des
+3 causes racines confirmé.
+
 Claude Code — 2026-08-27 (~23:51) : **Build 10 livré** (rapport 2 problèmes post-build-9 :
 #1 la photo fixe capturée = la vraie caméra selfie et non la vidéo choisie ; #2 mettre
 l'icône Téléphone proéminente à la place de la « tourelle »/pin GPS). Commit `a99fe1b`
