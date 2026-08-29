@@ -30,6 +30,16 @@ violet à un **carré translucide noir** avec motifs « réticule » (2 anneaux
 concentriques + tick), cadre intérieur violet hairline, glaze radial, gloss haut,
 icône SF conservée. Détail dans Journal.
 
+**S03 (2026-08-30, en cours, code non commité)** : trois changements déjà écrits et
+vérifiés en statique, **sans build CI ni release** (à lancer sur demande) :
+- **#1 toggle FR/EN Badoo** en barre de nav gauche (à côté du close), **bloc entier
+  compact** (segmented `36×16`, police 8 pt) — `/UI/IVPanelVC.m`.
+- **#2 carte GPS : tap hors champ replie le clavier** (`dismissTap`, `cancelsTouchesInView=NO`)
+  — `/UI/IVMapPickerVC.m`.
+- **#3 audit auto-swipe** : paywall/limite (back-off sans tap argent), rate-us, pub (close X),
+  fallback chips de conversation starter sur match, mots-clés élargis — `/Util/IVAutoSwipe.m`.
+Détail + limites dans Journal (2026-08-30).
+
 Forensics Badoo confirmé **classe lenient (Instagram/Threads)** : binaire décrypté
 (`LC_ENCRYPTION_INFO` absent), **aucune gate d'intégrité au lancement** (App Attest /
 DeviceCheck / ptrace / csops / CS_VALID absents), détection JB = télémétrie souple.
@@ -43,7 +53,15 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-**OpenCode** a pris la main (2026-08-29 11:00) et **livré build-13** (fix ratio
+**OpenCode, 2026-08-30 — S03 (3 demandes) implémentées, code NON commité, build CI NON
+lancé.** Changements : `IVPanelVC.m` (toggle FR/EN bloc compact), `IVMapPickerVC.m` (dismiss
+clavier carte), `IVAutoSwipe.m` (paywall/rate-us/pub/starter-chips). Détaillés dans le Journal
+du 2026-08-30. Prochaine action : sur demande explicite → commit + `gh workflow run build.yml
+-f ipa_url=v1.0-ipa` + release, puis validation appareil.
+
+**Rappel historique (2026-08-29) :** OpenCode avait livré **build-13** (fix ratio
+auto-swipe + keyboard dismiss + auto-detect langue/région + localisation UI 6 langues
+IVL10n), puis **build-16** : retrait de l'icône engrenage « Langue & région » de la
 auto-swipe + keyboard dismiss + auto-detect langue/région + localisation UI 6 langues
 IVL10n), puis **build-16** : retrait de l'icône engrenage « Langue & région » de la
 ligne des conteneurs (les options langue/région étant maintenant réglées dans l'écran
@@ -68,7 +86,27 @@ toute recompilation/re-livraison. Si l'utilisateur le demande, un **ré-audit
 ciblé** reste possible sur un vecteur précis (ex. iCloud Keychain synchronizable,
 app-group FBSDK, WKWebsiteDataStore). Sinon :
 
-**Valider build-16 sur appareil** (Sideloadly, iOS 17+) :
+**Valider build-17 sur appareil** (Sideloadly, iOS 17+) — reprend la liste historique
+**et** couvre la série S03 non encore buildée. La prochaine livraison doit inclure les 3
+changements S03 ; soit en relançant un build CI sur la branche (une fois commités), soit
+en enchaînant un build-18. Items S03 à valider d'abord :
+
+S03. **#1 toggle FR/EN (bloc entier compact)** — ouvrir le panneau : bascule **FR | EN** en
+    barre de nav gauche, à côté du close. Le **bloc entier** doit être petit (36×16, police
+    8 pt) — pas seulement les lettres. Changer FR↔EN doit re-rendre l'UI du tweak dans la
+    langue choisie (via `IVLSetOverrideLanguage`).
+S03. **#2 clavier carte GPS** — ouvrir la carte GPS, taper dans la recherche (clavier
+    affiché), puis taper **À CÔTÉ du champ** (zone vide de la carte) : le clavier doit se
+    replier. Ne pas casser le long-press dépose-pin ni le drag de l'épingle.
+S03. **#3 auto-swipe autonome** — lancer l'auto-swipe : (a) popup **« It's a Match! »** →
+    le bot ouvre le message (CTA « Say hello »/« Send a message »), tape une phrase au
+    hasard du panneau Phrases et appuie Envoyer, sinon rejette proprement ; (b) **limite
+    quotidienne / upsell Premium** → le bot **ne tape RIEN d'achetable**, il attend/rechauffe
+    (plus de coup de cœur sur l'overlay) ; (c) **publicité** → fermeture via le X, pas via un
+    CTA d'installation ; (d) **rate-us** → « not now/later ». Vérifier aussi qu'aucun « x »/
+    « skip » du deck n'est confondu avec un dismiss de popup (ratio like reste fidèle).
+
+Puis la liste historique restante (build-13/16/17) :
 1. **#1 ratio auto-swipe** — lancer l'auto-swipe : la répartition like/dislike doit
    suivre le « Like % » réglé (plus 95 % à droite ; suppression du fallback vote-opposé).
 2. **#2 clavier num.** — dans l'écran Délais de l'auto-swipe, le clavier numérique doit
@@ -101,6 +139,65 @@ app-group FBSDK, WKWebsiteDataStore). Sinon :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — S03 : #1 toggle FR/EN Badoo (bloc entier réduit) + #2 clavier carte replié + #3 audit réel auto-swipe (popups/match/paywall/pub)
+
+Trois demandes du thread actuel (`feature/s03-auto-swipe-enhancements`), implémentées et
+vérifiées en statique. **Aucun build CI ni release** lancé (pas de demande explicite ; voir
+« Prochaine étape »). Code modifié, non encore commité.
+
+**#1 — Option FR/EN ajoutée à Badoo, en réduisant le BLOC ENTIER** (pas seulement les
+lettres/chiffres), comme demandé (« tu ne réduis que les chiffres au lieu de réduire le bloc
+de cette option en entier »). `Tweak/Source/UI/IVPanelVC.m` :
+- `makeLangToggle` : `UISegmentedControl` **FR | EN**, frame **36×16**, police **8 pt**
+  semibold — c'est le **cadre (le bloc) de l'option entière** qui est compact, pas juste le
+  texte. `selectedSegmentIndex` calé sur `IVLCurrentLanguage()` ; tint sélection
+  `IVTheme.accent`, texte `onAccent`/`secondaryText`.
+- `leftBarButtonItems` = close + langItem (customView) → le toggle est en **barre de
+  navigation gauche, à côté du bouton de fermeture**.
+- `langChanged:` → `IVLSetOverrideLanguage:@"en"|@"fr"` + `[self reload]` (re-rend du menu
+  dans la langue choisie). L'API d'override était déjà là (`IVL10n.h:27`), simple boulonnage.
+- Vérifié : `IVLCurrentLanguage`/`IVLSetOverrideLanguage`/`IVTheme.accent|onAccent|
+  secondaryText` existent et sont utilisés à l'identique ailleurs.
+
+**#2 — Carte de localisation : taper À CÔTÉ du champ replie le clavier.** `IVMapPickerVC.m` :
+- `UITapGestureRecognizer *dismissTap` sur `self.view`, `cancelsTouchesInView = NO`,
+  `delegate = self` → **ne bloque ni le long-press pin ni le pan/pinch** de la carte.
+- `dismissKeyboard:` → `if (self.search.isFirstResponder) [self.search resignFirstResponder]`
+  (no-op sinon). Le clavier de recherche se replie en tapant la zone vide de la carte.
+- Vérifié : la ligne `[self.commit setTitle:...]` (que le handoff suspectait d'un retrait)
+  est **bien présente/restaurée** dans ce diff.
+
+**#3 — Audit réel de l'auto-swipe : autonomie sur les popups Badoo.** `IVAutoSwipe.m`.
+Recherche web des chaînes réelles de Badoo (écran « It's a Match! » + CTA « Say hello » /
+« Send a message » + **chips de conversation starter préfabriquées** ; paywall quota quot.
+« That's all your swipes [BUY] Premium » / « come back later » ; inserts publicitaires avec
+petit X ; prompts permission/rate-us). Améliorations :
+- **Paywall/limite quotidienne** : nouveau `handlePaywallInControls:` — se déclenche
+  SEULEMENT si un mot-clé paywall est présent ET que les boutons like/dislike du deck ne
+  sont plus tappables (overlay bloquant réel), sinon il s'agit du simple chrome
+  « premium/boost » du deck → on rechauffe. Jamais de tap sur l'upsell (argent) : on tape le
+  « not now/later/close » ou on attend. `IVPaywallKeywords`.
+- **Rate-us/review** : `handleRateUsInControls:` — dismiss « not now/later », jamais étoiles.
+- **Pub** : `handleAdBreakInControls:` — détecte les inserts (mots-clés non ambigus
+  `advertisement/sponsored/publicité/anuncio/werbung`…) puis ferme via « close ad/skip
+  ad/close » ou un bouton au titre **exactement** X/✕. `IVAdBreakKeywords`.
+- **Match** : fallback nouveau — si pas de composer ET pas de CTA, on tape une **chip de
+  conversation starter** (`IVStarterChipKeywords`) plutôt que de rejeter le match ; sinon
+  dismiss classique. Mots-clés match/CTA/send élargis (EN/FR/ES/DE/IT).
+- **Robustesse anti-fausses-coupes** (2 câbles évités) : retiré `x`/`skip`/`passer` de
+  `IVContinueKeywords` (le bouton dislike a ces substrings dans son identité → le handler
+  générique aura re-tapé dislike à chaque tick) et retiré `ad`/`pub` nus d'`IVAdBreakKeywords`
+  (matchent « grade »/« load »/« public »). Vérifié par comptage parenthèses/acc `{}/()` =
+  équilibrés sur les 3 fichiers après strip chaînes/commentaires.
+- `handleInterruptivePopupInControls:` **rétabli** (le remplacement avait fait disparaître
+  son corps ; le grep a confirmé définition + appel au tick).
+
+Ordre du tick : match → paywall → rate-us → ad → popup générique → swipe.
+
+**Non fait (limite honnête)** : aucune validation appareil (pas de device côté agent) ; le
+moteur pilote l'UI native Badoo uniquement ; la détection reste heuristique. Pas de build CI
+lancé.
 
 ### 2026-08-29 — OpenCode — build-17 : bouton flottant redessiné (carré translucide noir + motifs)
 
