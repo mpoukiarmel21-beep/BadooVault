@@ -14,7 +14,10 @@ device/locale, bouton flottant + menu Liquid Glass sombre, reset/suppression
 propres, anti-corrélation inter-conteneurs.
 
 **build-13 livré (2026-08-29)** : les 3 points demandés sont bouclés + ajout d'une
-**localisation multi-langue complète de l'UI du tweak**. Détail dans Journal.
+**localisation multi-langue complète de l'UI du tweak**. **build-16 (2026-08-29)** :
+retrait de l'engrenage « Langue & région » de la ligne (réglé désormais dans Créer) +
+bande des cellules élargie à 76 pt + accès langue/région déplacé dans la feuille
+d'actions. Détail dans Journal.
 
 Forensics Badoo confirmé **classe lenient (Instagram/Threads)** : binaire décrypté
 (`LC_ENCRYPTION_INFO` absent), **aucune gate d'intégrité au lancement** (App Attest /
@@ -29,10 +32,14 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-**OpenCode** a pris la main (2026-08-29 11:00) et **finalisé build-13** : fix ratio
-auto-swipe + keyboard dismiss + auto-detect langue/région (WIP Claude) + **localisation
-UI en 6 langues (IVL10n)**. Release **build-15** publiée. Branche
-`feature/s03-auto-swipe-enhancements`.
+**OpenCode** a pris la main (2026-08-29 11:00) et **livré build-13** (fix ratio
+auto-swipe + keyboard dismiss + auto-detect langue/région + localisation UI 6 langues
+IVL10n), puis **build-16** : retrait de l'icône engrenage « Langue & région » de la
+ligne des conteneurs (les options langue/région étant maintenant réglées dans l'écran
+de création) — l'accès « Langue & région » reste dispo dans la feuille d'actions de la
+ligne ; **bande des cellules élargie à 76 pt** (plus aérée/dynamique, demande
+utilisateur). Tourelle GPS conservée en tête des lignes. Release **build-16** publiée.
+Branche `feature/s03-auto-swipe-enhancements`.
 
 ## Prochaine étape
 
@@ -62,7 +69,26 @@ UI en 6 langues (IVL10n)**. Release **build-15** publiée. Branche
 
 ## Journal
 
-### 2026-08-29 — OpenCode — build-13 : ratio auto-swipe + clavier num. + auto-detect langue/région + localisation UI 6 langues
+### 2026-08-29 — OpenCode — build-16 : retrait engrenage « Langue & région » de la ligne + bande des cellules élargie
+
+Demande utilisateur : dans le panel, l'engrenage « Langue & région » de tête de ligne
+n'a plus lieu d'être puisque langue/région se règle désormais directement dans l'écran
+de création — le retirer. Et la bande (cellule) des conteneurs est trop fine → l'élargir.
+
+Modifs dans `Tweak/Source/UI/IVPanelVC.m` :
+- `trailingControlsForRow:` : l'engrenage `gearshape` (settings/langue-région) retiré
+  des contrôles de ligne non-défaut. Restent en ligne : **tourelle GPS** (leading,
+  large, affordance primaire) + **auto-swipe**. Largeur du wrap allégée (114 → 80).
+- `presentActionsFor:` : ajout de l'action **« Langue & région »** (icône `globe`) dans
+  la feuille d'actions du conteneur non-défaut → l'accès langue/région est conservé
+  (plus seulement à la création).
+- `viewDidLoad` : `rowHeight`/`estimatedRowHeight` portés à **76 pt** (bande plus
+  aérée/dynamique).
+- Suppression dead code : `settingsFromControl:` (plus référencé après retrait de
+  l'engrenage).
+- Build CI **réussi** (run 33250151491) → release **build-16** publiée.
+- Lien : `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-16/BadooVault.ipa`
+
 
 Les 3 points demandés par l'utilisateur (build-13) + un ajout structurant (L10n UI) ont été
 finalisés et livrés. Le fix ratio et le fix clavier + auto-detect étaient du WIP de Claude
