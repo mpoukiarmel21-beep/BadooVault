@@ -119,13 +119,22 @@
 }
 
 // Segmented FR | EN, BLOC ENTIER compact : non content de réduire les lettres,
-// on réduit le cadre (le bloc) de l'option entière — frame 36×16 + police 8 pt.
-// Reflète la langue cible courante ; tap → override persisté + re-rend du menu.
-- (UISegmentedControl *)makeLangToggle {
+// on réduit le cadre (le bloc) de l'option entière. Le seg est placé dans un
+// conteneur `UIView` à taille FIXE (36×16) et redimensionné dedans, ce qui force
+// le bloc à rester petit quoi qu'en dise la taille intrinsèque du contrôle
+// (sinon UIKit l'étirait et le bloc paraissait gros alors que seule la police
+// avait changé). Reflète la langue cible courante ; tap → override persisté +
+// re-rend du menu.
+- (UIView *)makeLangToggle {
     UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[
         @"FR", @"EN"
     ]];
-    seg.frame = CGRectMake(0, 0, 36, 16);
+    // Conteneur maître à taille bloquée — c'est CETTE frame qui définit la taille
+    // réelle du bloc; le seg est mis à l'échelle à l'intérieur (autoresizing).
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 36, 16)];
+    container.clipsToBounds = YES;
+    seg.frame = container.bounds;
+    seg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     seg.selectedSegmentIndex = [[IVLCurrentLanguage() lowercaseString]
                                     isEqualToString:@"en"] ? 1 : 0;
     seg.selectedSegmentTintColor = IVTheme.accent;
@@ -140,8 +149,9 @@
                                    NSFontAttributeName: segFont }
                        forState:UIControlStateNormal];
     [seg addTarget:self action:@selector(langChanged:) forControlEvents:UIControlEventValueChanged];
+    [container addSubview:seg];
     self.langToggle = seg;
-    return seg;
+    return container;
 }
 
 - (void)langChanged:(UISegmentedControl *)seg {
