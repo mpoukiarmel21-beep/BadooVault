@@ -40,6 +40,7 @@
 
 static NSString *const kIVBtnCenterKey = @"IVFloatingButtonCenter";
 static const CGFloat kIVButtonSize = 60.0;
+static const CGFloat kIVButtonCorner = 14.0;   // soft corner radius for the square face
 static const CGFloat kIVEdgeMargin = 18.0;   // breathing room from the screen edges
 
 @interface IVFloatingButton () <UIAdaptivePresentationControllerDelegate>
@@ -106,52 +107,96 @@ static const CGFloat kIVEdgeMargin = 18.0;   // breathing room from the screen e
 
 - (void)hide { self.window.hidden = YES; }
 
-// Builds the violet gradient disc + SF-symbol button + pan gesture. Positioned
-// by center (see restorePosition); the shadow draws outside the bounds and the
-// full-screen rootVC never clips it.
+// Builds a dark translucent square "vault" button with subtle inlay motifs + the
+// SF-symbol, plus the pan gesture. A deliberate move away from the old flat
+// violet disc to a more engineered, professional look: a smoked-black glass face
+// that stays legible over Badoo's bright content, a thin inner frame, faint
+// concentric datum rings inlaid into the glass, and a restrained violet edge-glow
+// that ties it to the rest of the theme. Positioned by center (see
+// restorePosition); the shadow draws outside the bounds and the full-screen
+// rootVC never clips it.
 - (UIView *)makeButtonContainer {
     UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kIVButtonSize, kIVButtonSize)];
 
-    // Soft violet glow instead of a flat drop shadow — reads as a premium control.
+    // Soft, wide violet glow instead of a flat drop shadow — reads as a premium
+    // control while the face stays dark and neutral.
     container.layer.shadowColor = IVTheme.accentDeep.CGColor;
-    container.layer.shadowOpacity = 0.45;
-    container.layer.shadowRadius = 12.0;
-    container.layer.shadowOffset = CGSizeMake(0, 6);
+    container.layer.shadowOpacity = 0.50;
+    container.layer.shadowRadius = 14.0;
+    container.layer.shadowOffset = CGSizeMake(0, 7);
     container.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:container.bounds
-                                                           cornerRadius:kIVButtonSize / 2.0].CGPath;
+                                                           cornerRadius:kIVButtonCorner].CGPath;
 
-    // Solid violet gradient disc — deterministic on any background (the old glass
-    // effect rendered near-white on some builds).
-    UIView *disc = [[UIView alloc] initWithFrame:container.bounds];
-    disc.userInteractionEnabled = NO;                 // the button on top gets the tap
-    disc.backgroundColor = IVTheme.accent;            // fallback if the layers fail
-    disc.layer.cornerRadius = kIVButtonSize / 2.0;
-    disc.layer.cornerCurve = kCACornerCurveContinuous;
-    disc.clipsToBounds = YES;
-    disc.layer.borderWidth = 1.0;
-    disc.layer.borderColor = IVTheme.hairline.CGColor;
-    disc.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    // The glass face — a near-opaque smoked black that stays a "bouton
+    // translucide noir" over any app background, with a violet-tinted tint so it
+    // harmonizes with the theme rather than reading as a dead black slab.
+    UIView *face = [[UIView alloc] initWithFrame:container.bounds];
+    face.userInteractionEnabled = NO;                 // the button on top gets the tap
+    face.backgroundColor = [UIColor colorWithRed:0.06 green:0.05 blue:0.10 alpha:0.92];
+    face.layer.cornerRadius = kIVButtonCorner;
+    face.layer.cornerCurve = kCACornerCurveContinuous;
+    face.clipsToBounds = YES;
+    face.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [container addSubview:face];
 
+    // Radial dark glaze: lighter toward the top-left, deeper at the edge — gives
+    // the square a manufactured, subtly-dimensional feel instead of flat fill.
     CAGradientLayer *fill = [CAGradientLayer layer];
-    fill.frame = disc.bounds;
-    fill.colors = @[(id)IVTheme.accent.CGColor, (id)IVTheme.accentDeep.CGColor];
-    fill.startPoint = CGPointMake(0.15, 0.0);
-    fill.endPoint = CGPointMake(0.85, 1.0);
-    fill.cornerRadius = kIVButtonSize / 2.0;
-    [disc.layer addSublayer:fill];
+    fill.frame = face.bounds;
+    fill.type = kCAGradientLayerRadial;
+    fill.colors = @[(id)[UIColor colorWithRed:0.30 green:0.26 blue:0.40 alpha:0.9].CGColor,
+                    (id)[UIColor colorWithRed:0.07 green:0.06 blue:0.12 alpha:0.0].CGColor];
+    fill.startPoint = CGPointMake(0.0, 0.0);
+    fill.endPoint = CGPointMake(1.0, 1.0);
+    [face.layer addSublayer:fill];
 
+    // Faint concentric datum rings inlaid into the glass — the "motifs
+    // professionnels" (think a lens/locate reticle): two hairline circles centered
+    // on the icon, drawn very quietly so they don't overpower the glyph.
+    for (NSInteger i = 0; i < 2; i++) {
+        CAShapeLayer *ring = [CAShapeLayer layer];
+        CGFloat r = kIVButtonSize * 0.22 + i * 8.0;
+        ring.path = [UIBezierPath bezierPathWithOvalInRect:
+                     CGRectMake(kIVButtonSize / 2.0 - r, kIVButtonSize / 2.0 - r, r * 2, r * 2)].CGPath;
+        ring.strokeColor = [UIColor colorWithWhite:1.0 alpha:0.10].CGColor;
+        ring.fillColor = UIColor.clearColor.CGColor;
+        ring.lineWidth = 0.8;
+        [face.layer addSublayer:ring];
+    }
+    // A short vertical datum tick under the icon, closing the reticle.
+    CAShapeLayer *tick = [CAShapeLayer layer];
+    UIBezierPath *tp = [UIBezierPath bezierPath];
+    CGFloat cx = kIVButtonSize / 2.0;
+    [tp moveToPoint:CGPointMake(cx, kIVButtonSize * 0.66)];
+    [tp addLineToPoint:CGPointMake(cx, kIVButtonSize * 0.76)];
+    tick.path = tp.CGPath;
+    tick.strokeColor = [UIColor colorWithWhite:1.0 alpha:0.12].CGColor;
+    tick.lineWidth = 1.0;
+    [face.layer addSublayer:tick];
+
+    // Thin inner frame — a crisp hairline at the very edge keeps the square's
+    // outline sharp against busy content (and its subtle violet read ties to the
+    // brand without turning the whole face purple).
+    CAShapeLayer *frame = [CAShapeLayer layer];
+    frame.path = [UIBezierPath bezierPathWithRoundedRect:
+                  CGRectInset(face.bounds, 1.0, 1.0) cornerRadius:kIVButtonCorner - 1.0].CGPath;
+    frame.strokeColor = [UIColor colorWithRed:0.55 green:0.45 blue:0.95 alpha:0.35].CGColor;
+    frame.fillColor = UIColor.clearColor.CGColor;
+    frame.lineWidth = 1.0;
+    [face.layer addSublayer:frame];
+
+    // Top-edge gloss — a soft horizontal sheen that reads light hitting glass.
     CAGradientLayer *gloss = [CAGradientLayer layer];
-    gloss.frame = CGRectMake(0, 0, container.bounds.size.width, container.bounds.size.height * 0.55);
-    gloss.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.38].CGColor,
+    gloss.frame = CGRectMake(0, 0, container.bounds.size.width, container.bounds.size.height * 0.5);
+    gloss.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.16].CGColor,
                      (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor];
-    gloss.startPoint = CGPointMake(0.5, 0.0);
-    gloss.endPoint = CGPointMake(0.5, 1.0);
-    [disc.layer addSublayer:gloss];
-
-    [container addSubview:disc];
+    gloss.startPoint = CGPointMake(0.0, 0.0);
+    gloss.endPoint = CGPointMake(0.0, 1.0);
+    [face.layer addSublayer:gloss];
 
     // The real interactive layer: a UIButton reliably turns a stationary touch
-    // into an action while coexisting with the drag pan on the container.
+    // into an action while coexisting with the drag pan on the container. The
+    // glyph sits above the reticle so the motifs stay background.
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
     btn.frame = container.bounds;
     btn.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
