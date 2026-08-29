@@ -49,6 +49,17 @@
     lp.delegate = self;
     [self.map addGestureRecognizer:lp];
 
+    // Taper À CÔTÉ du champ de recherche (carte / zone vide) replie le clavier
+    // quand il est ouvert — le clavier ne reste plus bloqué pendant la recherche
+    // d'une ville. `cancelsTouchesInView = NO` protège les gestes de la carte
+    // (long-press pin, pan, pinch) ; on n'agit que si la search bar est first
+    // responder, donc jamais de faux repli.
+    UITapGestureRecognizer *dismissTap = [[UITapGestureRecognizer alloc]
+                                          initWithTarget:self action:@selector(dismissKeyboard)];
+    dismissTap.cancelsTouchesInView = NO;
+    dismissTap.delegate = self;
+    [self.view addGestureRecognizer:dismissTap];
+
     self.commit = [UIButton buttonWithType:UIButtonTypeSystem];
     self.commit.translatesAutoresizingMaskIntoConstraints = NO;
     [self.commit setTitle:IVLL(@"gps.activate", @"Activer cette position") forState:UIControlStateNormal];
@@ -153,6 +164,14 @@
     CLLocationCoordinate2D coord = [self.map convertPoint:pt toCoordinateFromView:self.map];
     self.chosenName = nil;
     [self setChosen:coord reverseGeocode:YES];
+}
+
+// Replie le clavier quand on tape n'importe où en dehors de la search bar
+// pendant qu'elle est active (recherche d'une ville). No-op sinon.
+- (void)dismissKeyboard:(UITapGestureRecognizer *)g {
+    if (self.search.isFirstResponder) {
+        [self.search resignFirstResponder];
+    }
 }
 
 // Ignore long-presses that land on an annotation view (the pin) so grabbing the

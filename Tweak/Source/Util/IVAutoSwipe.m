@@ -12,14 +12,32 @@
 static NSArray<NSString *> *IVLikeKeywords(void)    { return @[@"like", @"heart", @"jaime", @"j'aime", @"vote_yes", @"yes_vote", @"favorite", @"btn_yes", @"coeur", @"cœur", @"me gusta"]; }
 static NSArray<NSString *> *IVDislikeKeywords(void) { return @[@"dislike", @"nope", @"vote_no", @"no_vote", @"reject", @"btn_no", @"croix", @"skip", @"passer", @"no me gusta", @"not interested", @"cross", @"x_button", @"dismiss_card", @"swipe_left", @"decline", @"close_card"]; }
 static NSArray<NSString *> *IVSwipeAvoidKeywords(void){ return @[@"super", @"boost", @"rewind", @"undo", @"back", @"retour", @"settings", @"réglage", @"reglage", @"ajustes", @"profile", @"profil", @"filter", @"filtre", @"menu", @"tab", @"onglet", @"spotlight", @"message", @"chat", @"crush", @"gift", @"cadeau", @"buy", @"acheter", @"premium", @"upgrade"]; }
-static NSArray<NSString *> *IVMatchKeywords(void)   { return @[@"match", @"it's a match", @"its a match", @"un match", @"nouveau match", @"new match", @"vous vous plaisez", @"vous plaisez", @"you matched", @"c'est un match", @"mutual", @"you like each other", @"you both like", @"tu plais", @"es un match", @"hiciste match", @"nuevo match"]; }
-static NSArray<NSString *> *IVMsgCTAKeywords(void)  { return @[@"send a message", @"send message", @"envoyer un message", @"say hi", @"say hello", @"dire bonjour", @"écrire", @"ecrire", @"start chatting", @"discuter", @"say something", @"escribir", @"enviar mensaje", @"send hi"]; }
-static NSArray<NSString *> *IVSendKeywords(void)    { return @[@"send", @"envoyer", @"envoi", @"enviar"]; }
-static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"continuer", @"keep swiping", @"keep playing", @"back to swiping", @"garder", @"maybe later", @"later", @"plus tard", @"not now", @"pas maintenant", @"fermer", @"close", @"got it", @"compris", @"no thanks", @"non merci", @"dismiss", @"seguir", @"continuar", @"cerrar", @"ahora no", @"d'accord", @"okay"]; }
+// Badoo match screens: "It's a Match!", "You and X liked each other / you matched",
+// with CTA "Say hello" / "Send a message" + preset conversation-starter chips.
+static NSArray<NSString *> *IVMatchKeywords(void)   { return @[@"it's a match", @"its a match", @"it’s a match", @"un match", @"c'est un match", @"c’est un match", @"vous vous plaisez", @"vous plaisez", @"you matched", @"you like each other", @"you both like", @"both liked", @"mutual", @"nouveau match", @"new match", @"es un match", @"hiciste match", @"nuevo match", @"tienes un match", @"es un match", @"du hast ein match", @"ein match", @"avete fatto match", @"hai un match"]; }
+static NSArray<NSString *> *IVMsgCTAKeywords(void)  { return @[@"send a message", @"send message", @"envoyer un message", @"say hi", @"say hello", @"dire bonjour", @"écrire", @"ecrire", @"start chatting", @"discuter", @"say something", @"escribir", @"enviar mensaje", @"send hi", @"hello", @"bonjour", @"write", @"write a message", @"chat", @"lächeln", @"hola", @"ciao", @"hallo", @"start a conversation"]; }
+static NSArray<NSString *> *IVSendKeywords(void)    { return @[@"send", @"envoyer", @"envoi", @"enviar", @"senden", @"invia"]; }
+// Preset conversation starters shown as chips on the Badoo match screen (a fallback
+// phrase source when the composer text field isn't reachable).
+static NSArray<NSString *> *IVStarterChipKeywords(void){ return @[@"say hi", @"hello", @"bonjour", @"hola", @"hi", @"hey", @"hello there", @"coucou", @"salut", @"hey there", @"you look", @"i like your"]; }
+// Dismiss/continue terms safe as substrings on a popup. NOTE: bare "x"/"skip"/"passer"
+// are DELIBERATELY excluded here — they are also part of the deck's dislike button
+// identity ("x_button","skip","cross"), so including them would make the generic popup
+// handler mis-tap the dislike button every tick and never swipe.
+static NSArray<NSString *> *IVContinueKeywords(void){ return @[@"continue", @"continuer", @"keep swiping", @"keep playing", @"back to swiping", @"garder", @"maybe later", @"later", @"plus tard", @"not now", @"pas maintenant", @"fermer", @"close", @"got it", @"compris", @"no thanks", @"non merci", @"dismiss", @"seguir", @"continuar", @"cerrar", @"ahora no", @"d'accord", @"okay", @"skip ad", @"close ad"]; }
 // Never tap these on an interruptive popup — monetization / destructive / nav.
-static NSArray<NSString *> *IVMoneyAvoidKeywords(void){ return @[@"buy", @"purchase", @"subscribe", @"abonn", @"acheter", @"premium", @"upgrade", @"payer", @"pay", @"restore", @"unlock", @"offer", @"discount", @"boost", @"superlike", @"super like", @"delete", @"supprimer", @"block", @"bloquer", @"report", @"signaler", @"logout", @"déconnex", @"deconnex", @"settings", @"réglage", @"reglage"]; }
+static NSArray<NSString *> *IVMoneyAvoidKeywords(void){ return @[@"buy", @"purchase", @"subscribe", @"abonn", @"acheter", @"premium", @"upgrade", @"payer", @"pay", @"restore", @"unlock", @"offer", @"discount", @"boost", @"superlike", @"super like", @"super powers", @"superpowers", @"credits", @"crédits", @"coins", @"delete", @"supprimer", @"block", @"bloquer", @"report", @"signaler", @"logout", @"déconnex", @"deconnex", @"settings", @"réglage", @"reglage", @"get more likes", @"get more", @"buy more", @"unlock more"]; }
+// Monetization signals for detecting a paywall (daily limit / premium upsell) that
+// MUST NOT be confirmed — we back off instead of tapping anything.
+static NSArray<NSString *> *IVPaywallKeywords(void){ return @[@"daily limit", @"no more likes", @"out of likes", @"that's all", @"thats all", @"come back later", @"get more likes", @"get more", @"premium", @"upgrade", @"boost", @"super powers", @"see who likes you", @"unlock"]; }
+// Rate-us / review prompts — dismiss harmlessly with the "not now / later" branch.
+static NSArray<NSString *> *IVRateKeywords(void)    { return @[@"rate us", @"rate the app", @"review", @"enjoying badoo", @"enjoying the app", @"like the app", @"5 stars", @"star rating", @"notez", @"noter", @"évaluation", @"califica", @"wertung", @"valuta"]; }
+// Ad overlays — close via the X / skip, never a CTA that opens the ad. Keep only the
+// multi-word / unambiguous terms: the bare substrings "ad" and "pub" match dozens of
+// unrelated words ("grade","load","badge","public","publish") and would false-trigger.
+static NSArray<NSString *> *IVAdBreakKeywords(void) { return @[@"advertisement", @"advertissement", @"sponsored", @"sponsored content", @"publicité", @"annonce publicitaire", @"anuncio", @"werbung", @"pubblicità", @"skip ad", @"close ad", @"ads shown", @"ad banner"]; }
 // Lone confirm titles matched EXACTLY (trimmed button title only).
-static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @"ok!", @"d'accord", @"j'ai compris", @"got it"]; }
+static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @"ok!", @"d'accord", @"j'ai compris", @"got it", @"close", @"fermer", @"x"]; }
 
 @implementation IVAutoSwipe {
     BOOL _running;
@@ -111,7 +129,14 @@ static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @
 
     // 1) A match screen takes priority: send a phrase (or open the composer), else dismiss.
     if ([self handleMatchInControls:controls labels:labels windows:windows]) { [self scheduleNextTick]; return; }
-    // 2) A generic interruptive popup blocks swiping: tap its dismiss/continue button,
+    // 2) A paywall (daily like limit / premium upsell / "come back later") is blocking:
+    //    back off WITHOUT tapping anything monetized — never buy, just wait it out.
+    if ([self handlePaywallInControls:controls]) { [self scheduleNextTick]; return; }
+    // 3) A rate-us / review prompt — dismiss with the "not now / later" branch only.
+    if ([self handleRateUsInControls:controls]) { [self scheduleNextTick]; return; }
+    // 4) An ad overlay — close it via the X / skip, never a CTA that opens the ad.
+    if ([self handleAdBreakInControls:controls labels:labels]) { [self scheduleNextTick]; return; }
+    // 5) A generic interruptive popup blocks swiping: tap its dismiss/continue button,
     //    never a monetization/destructive one. No-ops on the plain encounters screen.
     if ([self handleInterruptivePopupInControls:controls]) { [self scheduleNextTick]; return; }
 
@@ -265,7 +290,19 @@ static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @
     UIControl *cta = [self findControlIn:controls keywords:IVMsgCTAKeywords() avoid:IVMoneyAvoidKeywords()];
     if (cta) { IVLog(@"auto-swipe: match — opening message composer"); [self tapControl:cta]; return YES; }
 
-    // No composer, no CTA → dismiss so swiping resumes.
+    // No composer, no CTA — Badoo sometimes offers preset conversation-starter chips on
+    // the match screen. Tap one as a last resort (the user's typing flow isn't reachable
+    // this tick) so the match still gets a message.
+    NSArray<NSString *> *chipKeys = IVStarterChipKeywords();
+    for (UIControl *chip in controls) {
+        if ([self text:[self identityFor:chip] matchesAny:chipKeys]) {
+            IVLog(@"auto-swipe: match — no composer/CTA, sending preset starter chip");
+            [self tapControl:chip];
+            return YES;
+        }
+    }
+
+    // No composer, no CTA, no starter chip → dismiss so swiping resumes.
     UIControl *cont = [self findControlIn:controls keywords:IVContinueKeywords() avoid:IVMoneyAvoidKeywords()];
     if (!cont) cont = [self findExactTitleControlIn:controls titles:IVOKTitles()];
     if (cont) { IVLog(@"auto-swipe: match — no composer/CTA, dismissing"); [self tapControl:cont]; }
@@ -285,6 +322,76 @@ static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @
     [self tapControl:c];
     return YES;
 }
+
+// A paywall / daily-limit / premium-upsell overlay blocks the deck when a paywall keyword
+// is present AND the like/dislike vote controls are NOT reachable (i.e. the deck is truly
+// covered by an overlay — the "premium/boost/upgrade" text that persists on the encounters
+// chrome must NOT be mistaken for a blocking paywall, since those buttons stay visible
+// while swiping normally). We back off WITHOUT tapping the monetized CTA (that would buy
+// Premium / "get more likes"). If Badoo offers a harmless "not now / later / close", tap
+// that; otherwise just wait a delay in place so the next tick retries — crucially we do NOT
+// fall through to swiping against the paywall. Returns YES only for a true blocking paywall.
+- (BOOL)handlePaywallInControls:(NSArray<UIControl *> *)controls {
+    BOOL pw = NO;
+    NSArray<NSString *> *pk = IVPaywallKeywords();
+    for (UIControl *c in controls) {
+        if ([self text:[self identityFor:c] matchesAny:pk]) { pw = YES; break; }
+    }
+    if (!pw) return NO;
+    // If the deck's vote buttons are still tappable, this is just upsell chrome on the
+    // deck, NOT a blocking overlay — let swiping proceed normally.
+    if ([self findLikeControlIn:controls] || [self findDislikeControlIn:controls]) return NO;
+    // True blocking overlay: prefer the harmless decline; never tap a monetized button.
+    UIControl *decline = [self findControlIn:controls keywords:IVContinueKeywords() avoid:IVMoneyAvoidKeywords()];
+    if (decline) { IVLog(@"auto-swipe: paywall overlay — tapping dismiss (%@)", [self identityFor:decline]); [self tapControl:decline]; }
+    else IVLog(@"auto-swipe: paywall overlay (daily limit / upsell) — backing off, no monetized tap");
+    return YES;
+}
+
+// A rate-us / review prompt — harmlessly dismiss with "not now"/"later"/"no thanks". This
+// runs before the generic popup handler only to give a clearer log; behavior is the same
+// as the generic continue branch.
+- (BOOL)handleRateUsInControls:(NSArray<UIControl *> *)controls {
+    BOOL detected = NO;
+    NSArray<NSString *> *rk = IVRateKeywords();
+    for (UIControl *c in controls) {
+        if ([self text:[self identityFor:c] matchesAny:rk]) { detected = YES; break; }
+    }
+    if (!detected) return NO;
+    UIControl *dismiss = [self findControlIn:controls keywords:IVContinueKeywords() avoid:IVMoneyAvoidKeywords()];
+    if (dismiss) { IVLog(@"auto-swipe: rate-us prompt — dismissing"); [self tapControl:dismiss]; return YES; }
+    return NO;   // no harmless dismiss branch → let the generic handler / swiping decide
+}
+
+// An ad overlay is present when a visible label AND control both mention an ad, or an
+// ad keyword appears on a control alongside a close/skip. Close only via the X / "skip
+// ad" / "close ad" (present in IVContinueKeywords) — never any other ad CTA. Returns YES
+// when closed, so swiping resumes on the next tick.
+- (BOOL)handleAdBreakInControls:(NSArray<UIControl *> *)controls
+                         labels:(NSArray<UILabel *> *)labels {
+    NSArray<NSString *> *ak = IVAdBreakKeywords();
+    BOOL labelAd = NO;
+    for (UILabel *l in labels) { if ([self text:l.text matchesAny:ak]) { labelAd = YES; break; } }
+    BOOL controlAd = NO;
+    for (UIControl *c in controls) { if ([self text:[self identityFor:c] matchesAny:ak]) { controlAd = YES; break; } }
+    if (!labelAd && !controlAd) return NO;
+    // Only the close affordances, never a "install now"/"learn more" ad CTA. Bare "x" /
+    // "skip" are excluded (they match the deck's dislike button); the close is matched
+    // on multi-word terms or a button whose trimmed title is exactly an X/close glyph.
+    NSArray<NSString *> *closeKeys = @[@"close ad", @"close advertisement", @"skip ad", @"dismiss ad", @"close", @"fermer", @"cerrar", @"schließen", @"chiudi", @"not interested"];
+    UIControl *close = [self findControlIn:controls keywords:closeKeys avoid:IVMoneyAvoidKeywords()];
+    if (!close) {
+        for (UIControl *c in controls) {
+            if (![c isKindOfClass:[UIButton class]]) continue;
+            NSString *t = [[(UIButton *)c currentTitle] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if ([t isEqualToString:@"x"] || [t isEqualToString:@"X"] || [t isEqualToString:@"✕"] || [t isEqualToString:@"✖"]) { close = c; break; }
+        }
+    }
+    if (close) { IVLog(@"auto-swipe: ad break detected — closing"); [self tapControl:close]; return YES; }
+    IVLog(@"auto-swipe: ad break detected but no close affordance found");
+    return NO;
+}
+
 #pragma mark - Control / card / text finders
 
 // First enabled control whose identity contains ANY keyword and NONE of the avoid

@@ -20,6 +20,7 @@
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, copy) NSArray<IVContainer *> *items;
 @property (nonatomic, strong, nullable) UIBarButtonItem *cameraBarButton;
+@property (nonatomic, strong, nullable) UISegmentedControl *langToggle;
 @end
 
 @implementation IVPanelVC
@@ -53,6 +54,11 @@
     self.navigationItem.leftBarButtonItem =
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                                                       target:self action:@selector(close)];
+    // Bascule de langue FR/EN en tête de barre, BLOC entier volontairement
+    // compact (frame réduite + police réduite) pour ne rien écraser ni gonfler
+    // la barre — le segmented control entier est petit, pas seulement les lettres.
+    UIBarButtonItem *langItem = [[UIBarButtonItem alloc] initWithCustomView:[self makeLangToggle]];
+    self.navigationItem.leftBarButtonItems = @[ self.navigationItem.leftBarButtonItem, langItem ];
     UIBarButtonItem *add =
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd
                                                       target:self action:@selector(createNew)];
@@ -110,6 +116,37 @@
 - (void)reload {
     self.items = [IVContainerStore shared].containers;
     [self.table reloadData];
+}
+
+// Segmented FR | EN, BLOC ENTIER compact : non content de réduire les lettres,
+// on réduit le cadre (le bloc) de l'option entière — frame 36×16 + police 8 pt.
+// Reflète la langue cible courante ; tap → override persisté + re-rend du menu.
+- (UISegmentedControl *)makeLangToggle {
+    UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[
+        @"FR", @"EN"
+    ]];
+    seg.frame = CGRectMake(0, 0, 36, 16);
+    seg.selectedSegmentIndex = [[IVLCurrentLanguage() lowercaseString]
+                                    isEqualToString:@"en"] ? 1 : 0;
+    seg.selectedSegmentTintColor = IVTheme.accent;
+    if (@available(iOS 13.0, *)) {
+        seg.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    UIFont *segFont = [UIFont systemFontOfSize:8 weight:UIFontWeightSemibold];
+    [seg setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.onAccent,
+                                   NSFontAttributeName: segFont }
+                       forState:UIControlStateSelected];
+    [seg setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.secondaryText,
+                                   NSFontAttributeName: segFont }
+                       forState:UIControlStateNormal];
+    [seg addTarget:self action:@selector(langChanged:) forControlEvents:UIControlEventValueChanged];
+    self.langToggle = seg;
+    return seg;
+}
+
+- (void)langChanged:(UISegmentedControl *)seg {
+    IVLSetOverrideLanguage((seg.selectedSegmentIndex == 1) ? @"en" : @"fr");
+    [self reload];
 }
 
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
