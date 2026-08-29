@@ -489,7 +489,7 @@
     if (![IVPaths hasGlobalCameraVideo]) { [self pickGlobalCameraVideo]; return; }
     __weak typeof(self) ws = self;
     IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:IVLL(@"panel.camera", @"Caméra virtuelle")
-                                                        message:IVLL(@"panel.cam.set", @"Vidéo de vérification définie ✓ (partagée par tous les conteneurs)"];
+                                                         message:IVLL(@"panel.cam.set", @"Vidéo de vérification définie ✓ (partagée par tous les conteneurs)")];
     [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.cam.change", @"Changer la vidéo")
                                         symbol:@"video.badge.plus"
                                          style:IVActionStyleDefault
