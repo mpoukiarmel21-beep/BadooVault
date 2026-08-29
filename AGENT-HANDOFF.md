@@ -142,6 +142,21 @@ Puis la liste historique restante (build-13/16/17) :
 
 ## Journal
 
+### 2026-08-30 — OpenCode — Nettoyage dossier MONTAGE : seule la build-18 reste
+
+L'utilisateur pensait que la « version » dans `D:\MONTAGE\LES FICHER A FAIRE\05-03-2026\Nouveau dossier`
+avait été remplacée par une ancienne. Vérification : ce dossier ne contient **aucune source**
+(pas de `Tweak/`/`Source/`, confirmé par recherche récursive) — uniquement des binaires.
+Il contenait **deux IPAs** : `BadooVault.ipa` (81 947 163 o, sha256 `4BE82B6D...` = ANCIEN) et
+`BadooVault (1).ipa` (81 914 596 o, sha256 `AD6F2D3B...` = **build-18** avec les 3 fixes S03,
+hash exactement égal à la release GitHub `build-18`).
+
+L'utilisateur a choisi « Nettoyer : garder que build-18 » → j'ai **supprimé l'ancienne** et
+**renommé** `BadooVault (1).ipa` → `BadooVault.ipa`. Le dossier contient désormais **une seule**
+`BadooVault.ipa` = build-18 (sha256 `AD6F2D3B2B9024C07028E1EC596E6D4F9B68DC39062D69D938FB25BBBC1F8777`),
+prête à sideloader. Aucun re-build CI nécessaire (l'IPA build-18 existait déjà et était à jour).
+Confusion originelle : l'utilisateur regardait l'IPA sans « (1) » = la vieille version.
+
 ### 2026-08-30 — OpenCode — build-18 livré : toggle FR/EN + dismiss clavier carte + auto-swipe autonome
 
 Suite de l'entrée S03 ci-dessous : le code (déjà décrit là) a été **commité** (`d3c5b03`),
