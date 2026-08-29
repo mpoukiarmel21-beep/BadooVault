@@ -75,6 +75,10 @@
         self.table.sectionHeaderTopPadding = 0.0;   // pas d'espace mort au-dessus de la 1re ligne
     }
     self.table.tableFooterView = [self makeResetFooter];
+    // Bande plus aérée : hauteur de ligne augmentée pour une lecture / un tap plus
+    // confortables et un look plus dynamique (build-13+).
+    self.table.rowHeight = 76.0;
+    self.table.estimatedRowHeight = 76.0;
     // If the app launched degraded (isolation could not be applied and we fell
     // back to the REAL account), warn loudly at the top so the user does not log
     // in thinking they are inside a container.
@@ -161,16 +165,16 @@
 }
 
 // The cell's accessoryView: explicit quick-action icons ON the row itself, so the
-// per-container settings are one tap away without opening a menu (the user asked to
-// bring the icons back — "remets les icônes ... c'est beaucoup plus simple"). The
-// DEFAULT (real) container only carries the fake-GPS pin; a real container has no
-// spoofed device / auto-swipe to configure. Each NON-default row shows the
-// localisation pin FIRST and enlarged so it reads as the row's primary affordance
-// ("la tourelle, tu le mets sur le conteneur pour que ça soit visible"), then the
-// appareil glyph, then auto-swipe. The verification camera is GLOBAL now (one shared
-// video for every container) so it lives on the nav bar, not per row. Each button
-// carries the row index in its tag so the handler resolves the container at tap time
-// (self.items stays in sync across reloads).
+// per-container settings are one tap away without opening a menu. The DEFAULT
+// (real) container only carries the fake-GPS pin; a real container has no spoofed
+// device / auto-swipe to configure. Each NON-default row shows the localisation pin
+// FIRST and enlarged as the row's primary affordance ("la tourelle, tu le mets sur
+// le conteneur pour que ça soit visible"), then auto-swipe. The "Langue & région"
+// gear and the verification camera were moved off the row (build-13+): language /
+// region is now set directly in the create screen and stays reachable via the row's
+// action sheet, and the camera is GLOBAL (one shared video for every container) on
+// the nav bar. Each button carries the row index in its tag so the handler resolves
+// the container at tap time (self.items stays in sync across reloads).
 - (nullable UIView *)trailingControlsForRow:(NSInteger)row {
     if (row < 0 || row >= (NSInteger)self.items.count) return nil;
     IVContainer *c = self.items[row];
@@ -189,27 +193,23 @@
         return wrap;
     }
 
-    // Non-default: réglages (leading & prominent) · localisation · auto-swipe.
-    // Build-11 : à la demande de l'utilisateur, l'icône de tête n'est plus le
-    // téléphone mais l'engrenage « options / langue & région » (ouvre la feuille
-    // de réglages). Le pin GPS et l'auto-swipe la suivent comme contrôles normaux
-    // (le pin reste visible et tappable). Les infos appareil passent dans la
-    // feuille d'actions de la ligne (« Appareil (infos) »).
+    // Non-default: localisation (leading & prominent) · auto-swipe. L'engrenage
+    // « Langue & région » (gearshape) a été retiré de la ligne en build-13+ car
+    // langue/région se règle désormais directement dans l'écran de création ;
+    // il reste accessible via « Langue & région » dans la feuille d'actions de
+    // la ligne. Le pin GPS devient l'affordance primaire, puis l'auto-swipe.
     BOOL swipeOn = c.autoSwipeEnabled;
-    UIButton *settings = [self glyphButton:@"gearshape"
-                                       row:row action:@selector(settingsFromControl:)
-                                      tint:IVTheme.secondaryText];
     UIButton *swipe = [self glyphButton:(swipeOn ? @"hand.draw.fill" : @"hand.draw")
                                     row:row action:@selector(autoSwipeFromControl:)
                                    tint:(swipeOn ? IVTheme.accent : IVTheme.secondaryText)];
 
-    // Settings leads and is wider than the rest so it stands out as the row's
-    // headline control; the smaller glyphs (GPS · auto-swipe) trail it.
+    // Localisation leads and is wider than the rest as the row's headline
+    // control; the auto-swipe glyph trails it.
     const CGFloat leadW = 46.0, bw = 34.0, bh = 40.0;
-    NSArray<UIButton *> *trailing = @[ pin, swipe ];
+    NSArray<UIButton *> *trailing = @[ swipe ];
     UIView *wrap = [[UIView alloc] initWithFrame:CGRectMake(0, 0, leadW + bw * trailing.count, bh)];
-    settings.frame = CGRectMake(0, 0, leadW, bh);
-    [wrap addSubview:settings];
+    pin.frame = CGRectMake(0, 0, leadW, bh);
+    [wrap addSubview:pin];
     [trailing enumerateObjectsUsingBlock:^(UIButton *b, NSUInteger i, BOOL *stop) {
         b.frame = CGRectMake(leadW + bw * i, 0, bw, bh);
         [wrap addSubview:b];
@@ -259,9 +259,15 @@
                                            handler:^{ [ws activate:c]; }]];
     }
     if (!c.isDefault) {
-        // Réglages (langue & région) et auto-swipe ont leurs icônes directes sur la
-        // ligne ; l'appareil (infos, lecture seule) est déplacé ici en build-11 (il
-        // avait perdu son icône de ligne), avec renommer / supprimer.
+        // Réglages (langue & région) et auto-swipe : l'engrenage a été retiré de la
+        // ligne en build-13+ (langue/région se règle dans l'écran de création) ; la
+        // langue & région reste accessible ici, en plus de l'appareil (infos,
+        // lecture seule) et de renommer / supprimer. Le pin GPS et l'auto-swipe
+        // gardent leurs icônes directes sur la ligne / cette feuille.
+        [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.langs", @"Langue & région")
+                                            symbol:@"globe"
+                                             style:IVActionStyleDefault
+                                           handler:^{ [ws showSettingsFor:c]; }]];
         [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.device", @"Appareil (infos)")
                                             symbol:@"iphone"
                                              style:IVActionStyleDefault
@@ -310,12 +316,6 @@
 }
 
 #pragma mark - Row icon handlers (device · auto-swipe)
-
-// "Réglages" (icône engrenage en tête de ligne) : ouvre la feuille langue & région.
-- (void)settingsFromControl:(UIButton *)sender {
-    IVContainer *c = [self containerForControl:sender];
-    if (c) [self showSettingsFor:c];
-}
 
 // "Auto-swipe" : ouvre le panneau de configuration du bot pour ce conteneur.
 - (void)autoSwipeFromControl:(UIButton *)sender {
