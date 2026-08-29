@@ -26,16 +26,7 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Aucun agent actif. **Build-12 livré** (commit `9ce0573`, run 33138251124 verte →
-release `build-12`, `BadooVault.ipa`, 81 914 598 B). Traitait le rapport 3 problèmes appareil
-sur build-11 : #1 langue/région — l'UI de Badoo se rend maintenant dans la langue du conteneur
-(swap du main bundle par `IVLocalizedBundle` + `.lproj` choisi, `preferredLocalizations`,
-swizzle NSUserDefaults `AppleLanguages`/`AppleLocale`) ; #2 caméra virtuelle — la photo capturée
-est redressée en vertical téléphone (dérive `CGImagePropertyOrientation` du `preferredTransform`,
-`imageByApplyingCGOrientation:` + garantie portrait) ; #3 durcissement isolation — seed
-`AppleLanguages`/`AppleLocale` déplacé du domaine global `.GlobalPreferences` vers le domaine
-bundle-id de l'app (isolé par redirection), interception NSUserDefaults par-conteneur. Reste :
-validation appareil (humain).
+**Claude Code** prend la main (2026-08-29 10:00) — build-13 post-build-12: (1) auto-swipe like-ratio fix, (2) keyboard editing fix, (3) auto-detect language/region on container creation.
 
 ## Prochaine étape
 
