@@ -10,7 +10,7 @@
 // sets — they match unrelated words ("yesterday","notification","smoke","broke") and
 // would mis-tap; a lone OK button is caught by an exact-title pass instead.
 static NSArray<NSString *> *IVLikeKeywords(void)    { return @[@"like", @"heart", @"jaime", @"j'aime", @"vote_yes", @"yes_vote", @"favorite", @"btn_yes", @"coeur", @"cœur", @"me gusta"]; }
-static NSArray<NSString *> *IVDislikeKeywords(void) { return @[@"dislike", @"pass", @"nope", @"vote_no", @"no_vote", @"reject", @"btn_no", @"croix", @"skip", @"passer", @"no me gusta"]; }
+static NSArray<NSString *> *IVDislikeKeywords(void) { return @[@"dislike", @"nope", @"vote_no", @"no_vote", @"reject", @"btn_no", @"croix", @"skip", @"passer", @"no me gusta", @"not interested", @"cross", @"x_button", @"dismiss_card", @"swipe_left", @"decline", @"close_card"]; }
 static NSArray<NSString *> *IVSwipeAvoidKeywords(void){ return @[@"super", @"boost", @"rewind", @"undo", @"back", @"retour", @"settings", @"réglage", @"reglage", @"ajustes", @"profile", @"profil", @"filter", @"filtre", @"menu", @"tab", @"onglet", @"spotlight", @"message", @"chat", @"crush", @"gift", @"cadeau", @"buy", @"acheter", @"premium", @"upgrade"]; }
 static NSArray<NSString *> *IVMatchKeywords(void)   { return @[@"match", @"it's a match", @"its a match", @"un match", @"nouveau match", @"new match", @"vous vous plaisez", @"vous plaisez", @"you matched", @"c'est un match", @"mutual", @"you like each other", @"you both like", @"tu plais", @"es un match", @"hiciste match", @"nuevo match"]; }
 static NSArray<NSString *> *IVMsgCTAKeywords(void)  { return @[@"send a message", @"send message", @"envoyer un message", @"say hi", @"say hello", @"dire bonjour", @"écrire", @"ecrire", @"start chatting", @"discuter", @"say something", @"escribir", @"enviar mensaje", @"send hi"]; }
@@ -169,17 +169,16 @@ static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @
     return [self tapVoteLike:wantLike controls:controls];
 }
 
-// Tap Badoo's own like/dislike control; falls through to the opposite vote if the
-// desired one can't be located, so the queue keeps moving rather than stalling.
+// Tap Badoo's own like/dislike control for the EXACT vote requested. NO fallback to
+// the opposite vote: falling through used to convert every missed dislike into a like,
+// which is exactly the "je donne 50/50 et il fait 95% à droite" bug. If the desired
+// control can't be located this tick, we log and do nothing — the next tick retries,
+// so the like/dislike ratio stays faithful to _likePercent.
 - (BOOL)tapVoteLike:(BOOL)wantLike controls:(NSArray<UIControl *> *)controls {
     UIControl *primary = wantLike ? [self findLikeControlIn:controls] : [self findDislikeControlIn:controls];
     if (primary) { [self tapControl:primary]; return YES; }
-    UIControl *fallback = wantLike ? [self findDislikeControlIn:controls] : [self findLikeControlIn:controls];
-    if (fallback) {
-        IVLog(@"auto-swipe: desired %@ control missing — used opposite to advance", wantLike ? @"like" : @"dislike");
-        [self tapControl:fallback];
-        return YES;
-    }
+    IVLog(@"auto-swipe: desired %@ control not found this tick — skipped to keep the ratio",
+          wantLike ? @"like" : @"dislike");
     return NO;
 }
 #pragma mark - Window scanning (multi-window, popups first)
@@ -318,11 +317,19 @@ static NSArray<NSString *> *IVOKTitles(void)        { return @[@"ok", @"okay", @
 }
 
 - (UIControl *)findLikeControlIn:(NSArray<UIControl *> *)controls {
-    return [self findControlIn:controls keywords:IVLikeKeywords() avoid:IVSwipeAvoidKeywords()];
+    // Dislike EXCLUDES like: "like" is a substring of "dislike", so a control whose
+    // identity is "Dislike" / "dislike_button" must never be picked as a LIKE — that
+    // cross-match made the ratio meaningless (nearly every vote went to the "like"
+    // control even at 50/50). Merge the dislike keywords into the avoid set here.
+    NSMutableArray<NSString *> *avoid = [NSMutableArray arrayWithArray:IVSwipeAvoidKeywords()];
+    [avoid addObjectsFromArray:IVDislikeKeywords()];
+    return [self findControlIn:controls keywords:IVLikeKeywords() avoid:avoid];
 }
 
 - (UIControl *)findDislikeControlIn:(NSArray<UIControl *> *)controls {
-    return [self findControlIn:controls keywords:IVDislikeKeywords() avoid:IVSwipeAvoidKeywords()];
+    NSMutableArray<NSString *> *avoid = [NSMutableArray arrayWithArray:IVSwipeAvoidKeywords()];
+    [avoid addObjectsFromArray:IVLikeKeywords()];
+    return [self findControlIn:controls keywords:IVDislikeKeywords() avoid:avoid];
 }
 // The top swipe card: the largest plausible card-shaped container across the scanned
 // windows — a big, non-scrolling slab occupying 30–92% of the screen (not the whole
