@@ -25,6 +25,11 @@ locale/location), de la purge/reset et du core. **Aucune fuite inter-conteneurs
 trouvée → aucune correction ni re-build nécessaire** ; l'IPA livré (build-16) est
 déjà isolé proprement. Détail dans Journal.
 
+**build-17 livré (2026-08-29)** : bouton flottant **redessiné** — d'un disque
+violet à un **carré translucide noir** avec motifs « réticule » (2 anneaux
+concentriques + tick), cadre intérieur violet hairline, glaze radial, gloss haut,
+icône SF conservée. Détail dans Journal.
+
 Forensics Badoo confirmé **classe lenient (Instagram/Threads)** : binaire décrypté
 (`LC_ENCRYPTION_INFO` absent), **aucune gate d'intégrité au lancement** (App Attest /
 DeviceCheck / ptrace / csops / CS_VALID absents), détection JB = télémétrie souple.
@@ -51,6 +56,11 @@ Branche `feature/s03-auto-swipe-enhancements`.
 requise** — l'isolation est exhaustive et saine. Aucun commit de code ni re-build
 CI nécessaire. Voir « Prochaine étape » et le Journal pour la synthèse.
 
+**build-17 livré (2026-08-29, OpenCode)** : bouton flottant retravaillé en **carré
+translucide noir** à motifs réticule + cadre violet (design pro demandé par
+l'utilisateur). Branche `feature/s03-auto-swipe-enhancements`, release **build-17**
+publiée (lien dans Journal).
+
 ## Prochaine étape
 
 L'**audit anti-fuite est terminé sans correction** : le prochain agent peut sauter
@@ -75,6 +85,11 @@ app-group FBSDK, WKWebsiteDataStore). Sinon :
 6. **#6 build-16** — dans le panel, vérifier : plus d'engrenage « Langue & région » sur les
    lignes (l'accès est dans la feuille d'actions), bande des cellules plus large (76 pt),
    tourelle GPS toujours en tête.
+7. **#7 build-17 (bouton flottant)** — le bouton doit être un **carré translucide noir**
+   (60 pt, coins ~14 pt) avec : face noire fumée translucide, 2 anneaux concentriques fins
+   + tick vertical (motifs réticule), cadre intérieur violet, gloss haut, icône
+   `square.stack.3d.up.fill` en blanc au centre, glow violet. Drag/pan/snap + tap→panneau
+   doivent rester identiques. Donner la priorité à la lisibilité du carré sur fond clair Badoo.
 
 ## Blocages / risques
 
@@ -86,6 +101,39 @@ app-group FBSDK, WKWebsiteDataStore). Sinon :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-29 — OpenCode — build-17 : bouton flottant redessiné (carré translucide noir + motifs)
+
+Demande utilisateur : « retravailler le petit bouton flottant de manière un peu plus
+professionnelle, par exemple un petit carré un peu translucide noir avec des petits
+motifs très professionnel. »
+
+Modif dans `Tweak/Source/UI/IVFloatingButton.m` — `makeButtonContainer` (seul fichier
+touché, Makefile inchangé) : abandon du disque violet au profit d'un **carré noir
+fumé** travaillé :
+- **Face** : `UIView` noire translucide (`0.06/0.05/0.10` à `α0.92`), coins
+  `kIVButtonCorner = 14.0` (nouvelle constante), `cornerCurve` continu.
+- **Glaze radial** : `CAGradientLayerRadial` léger vers le haut-gauche → profondeur
+  manufacturée au lieu d'un aplati.
+- **Motifs réticule** : 2 **anneaux concentriques** hairline (`CAShapeLayer`, `α0.10`)
+  centrés sur l'icône + **tick vertical** sous l'icône (`α0.12`) — le côté « motif pro ».
+- **Cadre intérieur** violet hairline (`0.55/0.45/0.95 @α0.35`, `CGRectInset 1pt`,
+  rayon `kIVButtonCorner - 1`) — garde le lien avec le thème sans rendre la face violette.
+- **Gloss haut** : reflet horizontal `α0.16 → 0`.
+- **Glow** : ombre large violette (`accentDeep`, `α0.50`, rayon 14, offset y=7) recadrée
+  sur le carré.
+- Icône SF `square.stack.3d.up.fill` (24pt semibold) en blanc au centre, **inchangée**
+  ; drag/pan/snap + tap→panneau **inchangés** (seule la construction visuelle change).
+- `kIVButtonCorner` déplacée en haut avec les autres constantes de fichier pour la
+  convention du fichier. `clampedCenter`/`restorePosition` inchangés (le centre d'un
+  carré est aussi `size/2`).
+
+Commit `0876d78`. Build CI **réussi** (run 33250937716, `✓ Complete job` en 2m07s) →
+release **build-17** publiée (taille 81 947 163 o, HTTP 200) :
+`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-17/BadooVault.ipa`
+
+Validation appareil (humain) : rendu du carré sur fond clair Badoo + motifs + icône.
+Reste inchangé de build-16 : engrenage langue&région retiré des lignes, bande 76 pt.
 
 ### 2026-08-29 — OpenCode — Audit anti-fuite d'isolation : aucune fuite trouvée
 
