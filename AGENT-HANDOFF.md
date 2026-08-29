@@ -19,6 +19,12 @@ retrait de l'engrenage « Langue & région » de la ligne (réglé désormais da
 bande des cellules élargie à 76 pt + accès langue/région déplacé dans la feuille
 d'actions. Détail dans Journal.
 
+**Audit anti-fuite d'isolation réalisé (2026-08-29)** : revue exhaustive des 4
+redirections (HOME, Keychain, CFPreferences, App Group), des 3 spoofs (device/
+locale/location), de la purge/reset et du core. **Aucune fuite inter-conteneurs
+trouvée → aucune correction ni re-build nécessaire** ; l'IPA livré (build-16) est
+déjà isolé proprement. Détail dans Journal.
+
 Forensics Badoo confirmé **classe lenient (Instagram/Threads)** : binaire décrypté
 (`LC_ENCRYPTION_INFO` absent), **aucune gate d'intégrité au lancement** (App Attest /
 DeviceCheck / ptrace / csops / CS_VALID absents), détection JB = télémétrie souple.
@@ -41,9 +47,18 @@ ligne ; **bande des cellules élargie à 76 pt** (plus aérée/dynamique, demand
 utilisateur). Tourelle GPS conservée en tête des lignes. Release **build-16** publiée.
 Branche `feature/s03-auto-swipe-enhancements`.
 
+**Audit anti-fuite terminé (2026-08-29, OpenCode)** : verdict **aucune correction
+requise** — l'isolation est exhaustive et saine. Aucun commit de code ni re-build
+CI nécessaire. Voir « Prochaine étape » et le Journal pour la synthèse.
+
 ## Prochaine étape
 
-**Valider build-13 sur appareil** (Sideloadly, iOS 17+) :
+L'**audit anti-fuite est terminé sans correction** : le prochain agent peut sauter
+toute recompilation/re-livraison. Si l'utilisateur le demande, un **ré-audit
+ciblé** reste possible sur un vecteur précis (ex. iCloud Keychain synchronizable,
+app-group FBSDK, WKWebsiteDataStore). Sinon :
+
+**Valider build-16 sur appareil** (Sideloadly, iOS 17+) :
 1. **#1 ratio auto-swipe** — lancer l'auto-swipe : la répartition like/dislike doit
    suivre le « Like % » réglé (plus 95 % à droite ; suppression du fallback vote-opposé).
 2. **#2 clavier num.** — dans l'écran Délais de l'auto-swipe, le clavier numérique doit
@@ -57,6 +72,9 @@ Branche `feature/s03-auto-swipe-enhancements`.
    repli FR. Changer la langue d'un conteneur = re-rendu dans cette langue.
 5. **#5 reset/activation** — régénérer si besoin : la nouvelle langue reste bien celle du
    conteneur actif (jamais une fuite inter-conteneurs).
+6. **#6 build-16** — dans le panel, vérifier : plus d'engrenage « Langue & région » sur les
+   lignes (l'accès est dans la feuille d'actions), bande des cellules plus large (76 pt),
+   tourelle GPS toujours en tête.
 
 ## Blocages / risques
 
@@ -68,6 +86,61 @@ Branche `feature/s03-auto-swipe-enhancements`.
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-29 — OpenCode — Audit anti-fuite d'isolation : aucune fuite trouvée
+
+Audit complet de l'isolation inter-conteneurs, promis et lancé à la suite du
+build-16. Revue ligne par ligne des fichiers d'isolation + spoofs + core + purge.
+Verdict : **isolation saine, aucune correction, aucun re-build nécessaire**.
+
+Couches auditées et verdict :
+- **#1 HOME** (`IVHomeRedirect.m`, `IVPaths.m`) : `containerRootForCID` → `realHome/
+  Documents/Instances/<cid>` ; Caches/Cookies/WebKit/HTTPStorages/Application Support/
+  Preferences/AppGroups/tmp sont tous sous HOME → isolés par conteneur.
+- **#2 Keychain** (`IVKeychainHook.m`, 877 lignes) : namespace `IV:<cid>:` sur
+  service/server (genp/inet) ET tag CFData (kSecClassKey, le keypair device)
+  — exhaustif, y compris `SecKeyCreateRandomKey` (les deux modes de write/read
+  symétriques). Default = **HIDE mode** (gPrefix=nil) : lecture du keychain réel mais
+  exclusion de tout item `IV:` aux reads, enumerations ET class-wide deletes (delete par
+  persistentRef exact, jamais les conteneurs). Linux explicit refs (persistentRef/
+  kSecMatchItemList) passées telles-quelles (sûres). **Purge/delete couvre la
+  synchronizable iCloud** via `kSecAttrSynchronizable=SynchronizableAny` (genp/inet/key),
+  empty count residue vérifie le purge, reset global purge les items réels
+  (`purgeRealPasswordItems`, jamais les marqués `IV:`, keypair device conservé).
+- **#3 CFPreferences** (`IVPrefsHook.m`) : tous les domaines non-`com.apple.` redirigés
+  vers `<containerRoot>/Library/Preferences`, force CurrentUser pour AnyUser. Le seed
+  locale de `IVLocaleSpoof` est écrit sur le domaine **bundle-id propre** (pas
+  `.GlobalPreferences`) → jamais de fuite de langue entre conteneurs (déjà traité en
+  build-12).
+- **#4 App Group** (`IVAppGroupHook.m`) : sous-dossier `<containerRoot>/AppGroups/
+  <group>` par conteneur, `IVSafeGroupComponent` sanitisé (anti `..`/`/`), squelette
+  Library/Caches/Documents recréé. Aucune fuite FBSDK cross-conteneur.
+- **Device** (`IVDeviceSpoof.m`, 413 lignes) : installed UNIQUEMENT pour conteneur
+  non-défaut ; modèle/UDID/IDFV/IDFA/serial/kern.boottime/iOS/MobileGestalt tous
+  déterministes par-cid et cohérents entre eux (hw.machine == ProductType, boottime ↔
+  systemUptime). Jamais appliqué au défaut.
+- **Locale** (`IVLocaleSpoof.m`) : même gate conteneur non-défaut ; seed isolé dans le
+  domaine app ; fusTo/lproj/AppleLanguages/AppleLocale cohérents. `.lproj` résolu
+  seulement si Badoo l'embarque.
+- **Location** (`IVLocationSpoof.m`) : lit le `activeContainer` EN LIVE (pas de latching) ;
+  quand le défaut est actif ou qu'aucune coordonnée n'est posée, `isActive`=NO → le GPS
+  réel reprend (`IVReconcile`), jamais de fake location fuitée vers le défaut.
+- **Core** (`IVContainerStore.m`, `IVContainer.m`) : `deleteContainerDataLocked:`
+  et `resetAll` purgent fichiers du conteneur + keychain prefix `IV:<cid>:` +
+  cookies/HTTPStorages live + NSUserDefaults (flush cfprefsd). Modèle `IVContainer`
+  = simple plist, aucune logique d'isolation.
+
+Partagé PAR CHOIX (documenté, pas une fuite) : caméra virtuelle **globale**
+(`IVCameraHook.installGlobal` hors gate `isolated`, décidé build-9) ; le défaut
+tourne avec keychain réel (HIDE) + aucun spoof device/locale (comportement voulu pour
+le compte principal).
+
+Conséquence : **aucun commit de code, aucun re-build CI ni nouvelle release**.
+L'IPA livré (build-16) est déjà isolément propre. Ce journal documente que le
+« 100 % sécurisé » demandé en build-12 est vérifié sur la totalité des surfaces.
+
+Re-audit possible sur demande (vecteurs ciblés : synchronizable iCloud,
+WKWebsiteDataStore/NSURLCache, app-group FBSDK multi-comptes).
 
 ### 2026-08-29 — OpenCode — build-16 : retrait engrenage « Langue & région » de la ligne + bande des cellules élargie
 
