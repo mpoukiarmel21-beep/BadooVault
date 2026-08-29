@@ -187,6 +187,11 @@
     tf.layer.borderColor = IVTheme.glassStroke.CGColor;
     tf.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 8, 0)];
     tf.leftViewMode = UITextFieldViewModeAlways;
+    // A "Fermer" toolbar above the numeric pad (number/decimal pads have NO return
+    // key, so without this the keyboard stays up and blocks the fields below —
+    // the "le clavier reste en permanence, je ne peux pas toucher le dernier
+    // champ" bug). One shared toolbar instance per field target.
+    tf.inputAccessoryView = [self makeInputToolbarTargetAction:@selector(dismissKeyboard)];
     [tf.widthAnchor constraintEqualToConstant:90].active = YES;
     [tf.heightAnchor constraintEqualToConstant:38].active = YES;
     [tf setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
@@ -196,6 +201,19 @@
     [row addArrangedSubview:tf];
     [stack addArrangedSubview:row];
     return tf;
+}
+
+- (void)dismissKeyboard {
+    [self.view endEditing:YES];
+}
+
+- (UIToolbar *)makeInputToolbarTargetAction:(SEL)action {
+    UIToolbar *tb = [UIToolbar new];
+    [tb sizeToFit];
+    UIBarButtonItem *flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithTitle:@"Fermer" style:UIBarButtonItemStyleDone target:self action:action];
+    tb.items = @[flex, done];
+    return tb;
 }
 
 - (UIButton *)makeRunButton {

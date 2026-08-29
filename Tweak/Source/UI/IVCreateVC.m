@@ -4,6 +4,7 @@
 #import "../Core/IVContainer.h"
 #import "../Core/IVContainerStore.h"
 #import "../Spoof/IVDeviceIdentity.h"
+#import "../Spoof/IVLocaleSpoof.h"
 
 #pragma mark - Create / edit
 
@@ -28,6 +29,8 @@
                             : [IVDeviceIdentity seededModelForCID:container.cid].identifier;
             _chosenIOS = container.iosVersion.length ? container.iosVersion
                             : [IVDeviceIdentity seededIOSVersionForCID:container.cid];
+            _appLanguage = container.appLanguage ?: @"";
+            _regionCountry = container.regionCountry ?: @"";
         } else {
             // Create: mint the cid NOW and derive a UNIQUE fingerprint from it, so
             // every new container defaults to a DISTINCT device + iOS instead of all
@@ -38,6 +41,14 @@
             _seedCID = [[NSUUID UUID] UUIDString];
             _chosenModel = [IVDeviceIdentity seededModelForCID:_seedCID].identifier;
             _chosenIOS = [IVDeviceIdentity seededIOSVersionForCID:_seedCID];
+            // Auto-detect device language and region for the new container, matching
+            // against Badoo's supported locales. The user sees these pre-selected and
+            // can override them in the picker before saving ("détecter le système et la
+            // langage du téléphone ... par défaut, il va sélectionner la langue anglais
+            // et le pays US"). nil/empty = keep as "Automatique" (no override, real
+            // device locale shown).
+            _appLanguage = [IVLocaleSpoof deviceLanguage] ?: @"";
+            _regionCountry = [IVLocaleSpoof deviceRegion] ?: @"";
         }
     }
     return self;
@@ -106,6 +117,15 @@
         return;
     }
 
+    // Persist the language/region selection (auto-detected for new containers,
+    // kept for edits). Empty string == "Automatique" → no override.
+    if (![store setAppLanguage:(self.appLanguage.length ? self.appLanguage : nil)
+                        region:(self.regionCountry.length ? self.regionCountry : nil)
+                  forContainer:target]) {
+        [self warnSaveFailed];
+        return;
+    }
+
     // Création comme édition : le conteneur est enregistré, on revient simplement
     // au panneau (comportement historique rétabli en build-11, à la demande de
     // l'utilisateur). Créer un conteneur ne fait que l'AJOUTER à la liste ; pour
@@ -124,10 +144,10 @@
     [self presentViewController:a animated:YES completion:nil];
 }
 
-#pragma mark - Table (row 0: name, row 1: model, row 2: iOS version)
+#pragma mark - Table (row 0: name, row 1: model, row 2: iOS version, row 3: langue, row 4: région)
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 1; }
-- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return 3; }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return 5; }
 
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     return [NSString stringWithFormat:@"Modèles limités à la puce réelle (%@). Chaque conteneur répond ces informations à Badoo.",
@@ -156,15 +176,31 @@
     cell.backgroundColor = IVTheme.glassFill;
     cell.textLabel.textColor = IVTheme.primaryText;
     cell.detailTextLabel.textColor = IVTheme.secondaryText;
-    if (ip.row == 1) {
-        cell.textLabel.text = @"Modèle d'appareil";
-        cell.detailTextLabel.text = [IVDeviceIdentity marketingNameForIdentifier:self.chosenModel];
-    } else {
-        NSString *build = [IVDeviceIdentity buildForIOSVersion:self.chosenIOS];
-        cell.textLabel.text = @"Version iOS";
-        cell.detailTextLabel.text = build.length
-            ? [NSString stringWithFormat:@"%@ (%@)", self.chosenIOS, build]
-            : self.chosenIOS;
+    switch (ip.row) {
+        case 1:
+            cell.textLabel.text = @"Modèle d'appareil";
+            cell.detailTextLabel.text = [IVDeviceIdentity marketingNameForIdentifier:self.chosenModel];
+            break;
+        case 2: {
+            NSString *build = [IVDeviceIdentity buildForIOSVersion:self.chosenIOS];
+            cell.textLabel.text = @"Version iOS";
+            cell.detailTextLabel.text = build.length
+                ? [NSString stringWithFormat:@"%@ (%@)", self.chosenIOS, build]
+                : self.chosenIOS;
+            break;
+        }
+        case 3:
+            cell.textLabel.text = @"Langue de l'application";
+            cell.detailTextLabel.text = self.appLanguage.length
+                ? [IVLocaleSpoof displayNameForLanguage:self.appLanguage] : @"Automatique (système)";
+            break;
+        case 4:
+            cell.textLabel.text = @"Pays / région";
+            cell.detailTextLabel.text = self.regionCountry.length
+                ? [IVLocaleSpoof displayNameForRegion:self.regionCountry] : @"Automatique (système)";
+            break;
+        default:
+            break;
     }
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     UIView *sel = [UIView new];
@@ -175,11 +211,49 @@
 
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
-    if (ip.row == 1) {
-        [self pickModel];
-    } else if (ip.row == 2) {
-        [self pickIOS];
+    switch (ip.row) {
+        case 1: [self pickModel]; break;
+        case 2: [self pickIOS]; break;
+        case 3: [self pickLanguage]; break;
+        case 4: [self pickRegion]; break;
+        default: break;
     }
+}
+
+// Auto-detected language picker — same options as the settings sheet, so the user
+// can override the device-detected value before saving.
+- (void)pickLanguage {
+    NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
+    [opts addObject:[IVListOption value:@"" title:@"Automatique (système)" subtitle:nil]];
+    for (NSString *code in [IVLocaleSpoof supportedLanguageCodes]) {
+        [opts addObject:[IVListOption value:code title:[IVLocaleSpoof displayNameForLanguage:code] subtitle:code]];
+    }
+    __weak typeof(self) ws = self;
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Langue de l'application"
+                                                      options:opts
+                                                selectedValue:self.appLanguage
+                                                       onPick:^(IVListOption *o) {
+        ws.appLanguage = o.value.length ? o.value : @"";
+        [ws.table reloadData];
+    }];
+    [self.navigationController pushViewController:p animated:YES];
+}
+
+- (void)pickRegion {
+    NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
+    [opts addObject:[IVListOption value:@"" title:@"Automatique (système)" subtitle:nil]];
+    for (NSString *code in [IVLocaleSpoof supportedRegionCodes]) {
+        [opts addObject:[IVListOption value:code title:[IVLocaleSpoof displayNameForRegion:code] subtitle:code]];
+    }
+    __weak typeof(self) ws = self;
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Pays / région"
+                                                      options:opts
+                                                selectedValue:self.regionCountry
+                                                       onPick:^(IVListOption *o) {
+        ws.regionCountry = o.value.length ? o.value : @"";
+        [ws.table reloadData];
+    }];
+    [self.navigationController pushViewController:p animated:YES];
 }
 
 - (void)pickModel {

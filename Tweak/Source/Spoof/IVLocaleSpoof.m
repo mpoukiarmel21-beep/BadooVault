@@ -308,4 +308,44 @@ static void IVSwizzleUDReader(SEL sel) {
     return name.length ? name : code;
 }
 
+#pragma mark - Auto-detect (device locale)
+
+// Detect the device's CURRENT system language, mapped onto Badoo's supported list.
+// Reads the real preferred languages (not the spoofed ones — this runs before any
+// container hooks apply, and must reflect the ACTUAL phone to seed a fresh persona).
+// Matching is by base subtag first ("en-GB" → "en"), then by exact tag. Returns nil
+// when the phone's language has no supported equivalent.
++ (nullable NSString *)deviceLanguage {
+    NSArray<NSString *> *prefs = [NSLocale preferredLanguages];
+    if (!prefs.count) return nil;
+    NSArray<NSString *> *supported = [self supportedLanguageCodes];
+    NSString *primary = prefs.firstObject;
+    // Exact match first.
+    for (NSString *s in supported) { if ([s caseInsensitiveCompare:primary] == NSOrderedSame) return s; }
+    // Base-subtag match: "en-GB" / "en-US" → "en".
+    NSString *base = [[primary componentsSeparatedByString:@"-"] firstObject];
+    if (base.length) {
+        for (NSString *s in supported) { if ([s caseInsensitiveCompare:base] == NSOrderedSame) return s; }
+    }
+    // Fall back to scanning every preferred language for any supported tag.
+    for (NSString *p in prefs) {
+        NSString *pb = [[p componentsSeparatedByString:@"-"] firstObject];
+        for (NSString *s in supported) {
+            if ([s caseInsensitiveCompare:p] == NSOrderedSame || [s caseInsensitiveCompare:pb] == NSOrderedSame) return s;
+        }
+    }
+    return nil;
+}
+
+// Detect the device's current country/region from the locale identifier, mapped onto
+// the supported region list. nil when unknown.
++ (nullable NSString *)deviceRegion {
+    NSLocale *loc = [NSLocale currentLocale];
+    NSString *cc = [loc objectForKey:NSLocaleCountryCode];
+    if (!cc.length) return nil;
+    NSArray<NSString *> *supported = [self supportedRegionCodes];
+    for (NSString *s in supported) { if ([s caseInsensitiveCompare:cc] == NSOrderedSame) return s; }
+    return nil;
+}
+
 @end

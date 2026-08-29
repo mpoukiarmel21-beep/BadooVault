@@ -10,6 +10,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// nil == create mode; non-nil == edit mode.
 - (instancetype)initWithContainer:(nullable IVContainer *)container;
 
+/// Language/region selection (for new containers: auto-detected from device).
+@property (nonatomic, copy) NSString *appLanguage;
+@property (nonatomic, copy) NSString *regionCountry;
+
 @end
 
 NS_ASSUME_NONNULL_END

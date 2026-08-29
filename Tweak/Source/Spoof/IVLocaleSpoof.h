@@ -42,6 +42,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// French display name for a region code.
 + (NSString *)displayNameForRegion:(NSString *)code;
 
+/// AUTO-DETECT: returns a language code and region detected from the device's system
+/// settings, matched against Badoo's supported languages/regions. Useful for seeding a
+/// new container with the user's current locale. Returns nil/NULL for language if no
+/// supported language matches the device's preferred languages; region is nil if the
+/// device locale's country code is not in the supported region list.
++ (nullable NSString *)deviceLanguage;
++ (nullable NSString *)deviceRegion;
+
 @end
 
 NS_ASSUME_NONNULL_END
