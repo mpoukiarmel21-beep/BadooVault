@@ -1,6 +1,7 @@
 #import "IVCreateVC.h"
 #import "IVListPickerVC.h"
 #import "IVTheme.h"
+#import "IVL10n.h"
 #import "../Core/IVContainer.h"
 #import "../Core/IVContainerStore.h"
 #import "../Spoof/IVDeviceIdentity.h"
@@ -56,7 +57,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = self.editing ? @"Modifier" : @"Nouveau conteneur";
+    self.title = self.editing ? IVLL(@"create.title.edit", @"Modifier") : IVLL(@"create.title.new", @"Nouveau conteneur");
     self.view.backgroundColor = IVTheme.panelBackground;
     // Pin Dark so the grouped table, its separators and system controls read as
     // one dark surface with the pickers pushed from here.
@@ -137,10 +138,10 @@
 }
 
 - (void)warnSaveFailed {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Échec de l'enregistrement"
-        message:@"Le conteneur n'a pas pu être enregistré (écriture disque échouée). Réessaie."
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"common.savefail.t", @"Échec de l'enregistrement")
+        message:IVLL(@"common.savefail.m", @"Le conteneur n'a pas pu être enregistré (écriture disque échouée). Réessaie.")
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
@@ -161,7 +162,7 @@
         if (!self.nameField) {
             self.nameField = [[UITextField alloc] initWithFrame:CGRectInset(cell.contentView.bounds, 16, 0)];
             self.nameField.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            self.nameField.placeholder = @"Nom du conteneur";
+            self.nameField.placeholder = IVLL(@"create.name", @"Nom du conteneur");
             self.nameField.text = self.editing.name;
             self.nameField.textColor = IVTheme.primaryText;
             self.nameField.clearButtonMode = UITextFieldViewModeWhileEditing;
@@ -178,26 +179,26 @@
     cell.detailTextLabel.textColor = IVTheme.secondaryText;
     switch (ip.row) {
         case 1:
-            cell.textLabel.text = @"Modèle d'appareil";
+            cell.textLabel.text = IVLL(@"create.model", @"Modèle d'appareil");
             cell.detailTextLabel.text = [IVDeviceIdentity marketingNameForIdentifier:self.chosenModel];
             break;
         case 2: {
             NSString *build = [IVDeviceIdentity buildForIOSVersion:self.chosenIOS];
-            cell.textLabel.text = @"Version iOS";
+            cell.textLabel.text = IVLL(@"create.ios", @"Version iOS");
             cell.detailTextLabel.text = build.length
                 ? [NSString stringWithFormat:@"%@ (%@)", self.chosenIOS, build]
                 : self.chosenIOS;
             break;
         }
         case 3:
-            cell.textLabel.text = @"Langue de l'application";
+            cell.textLabel.text = IVLL(@"panel.locale", @"Langue de l'application");
             cell.detailTextLabel.text = self.appLanguage.length
-                ? [IVLocaleSpoof displayNameForLanguage:self.appLanguage] : @"Automatique (système)";
+                ? [IVLocaleSpoof displayNameForLanguage:self.appLanguage] : IVLL(@"panel.auto", @"Automatique (système)");
             break;
         case 4:
-            cell.textLabel.text = @"Pays / région";
+            cell.textLabel.text = IVLL(@"panel.region", @"Pays / région");
             cell.detailTextLabel.text = self.regionCountry.length
-                ? [IVLocaleSpoof displayNameForRegion:self.regionCountry] : @"Automatique (système)";
+                ? [IVLocaleSpoof displayNameForRegion:self.regionCountry] : IVLL(@"panel.auto", @"Automatique (système)");
             break;
         default:
             break;
@@ -224,12 +225,12 @@
 // can override the device-detected value before saving.
 - (void)pickLanguage {
     NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
-    [opts addObject:[IVListOption value:@"" title:@"Automatique (système)" subtitle:nil]];
+    [opts addObject:[IVListOption value:@"" title:IVLL(@"panel.auto", @"Automatique (système)") subtitle:nil]];
     for (NSString *code in [IVLocaleSpoof supportedLanguageCodes]) {
         [opts addObject:[IVListOption value:code title:[IVLocaleSpoof displayNameForLanguage:code] subtitle:code]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Langue de l'application"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"panel.locale", @"Langue de l'application")
                                                       options:opts
                                                 selectedValue:self.appLanguage
                                                        onPick:^(IVListOption *o) {
@@ -241,12 +242,12 @@
 
 - (void)pickRegion {
     NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
-    [opts addObject:[IVListOption value:@"" title:@"Automatique (système)" subtitle:nil]];
+    [opts addObject:[IVListOption value:@"" title:IVLL(@"panel.auto", @"Automatique (système)") subtitle:nil]];
     for (NSString *code in [IVLocaleSpoof supportedRegionCodes]) {
         [opts addObject:[IVListOption value:code title:[IVLocaleSpoof displayNameForRegion:code] subtitle:code]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Pays / région"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"panel.region", @"Pays / région")
                                                       options:opts
                                                 selectedValue:self.regionCountry
                                                        onPick:^(IVListOption *o) {
@@ -262,7 +263,7 @@
         [opts addObject:[IVListOption value:m.identifier title:m.marketingName subtitle:m.identifier]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Modèle d'appareil"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"create.model", @"Modèle d'appareil")
                                                       options:opts
                                                 selectedValue:self.chosenModel
                                                        onPick:^(IVListOption *o) {
@@ -279,7 +280,7 @@
         [opts addObject:[IVListOption value:v title:v subtitle:build.length ? [@"build " stringByAppendingString:build] : nil]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Version iOS"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"create.ios", @"Version iOS")
                                                       options:opts
                                                 selectedValue:self.chosenIOS
                                                        onPick:^(IVListOption *o) {

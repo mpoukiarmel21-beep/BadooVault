@@ -4,6 +4,7 @@
 #import "IVListPickerVC.h"
 #import "IVTheme.h"
 #import "IVActionSheet.h"
+#import "IVL10n.h"
 #import "../Core/IVContainer.h"
 #import "../Core/IVContainerStore.h"
 #import "../Spoof/IVDeviceSpoof.h"
@@ -114,7 +115,7 @@
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.items.count; }
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    return @"Changer de conteneur actif nécessite un redémarrage de l'app.";
+    return IVLL(@"panel.switchFoot", @"Changer de conteneur actif…");
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -123,7 +124,7 @@
     BOOL active = [c.cid isEqualToString:[IVContainerStore shared].activeCID];
 
     NSString *model = [IVDeviceSpoof effectiveModelForContainer:c];
-    NSMutableString *sub = [NSMutableString stringWithString:c.isDefault ? @"Réel (non isolé)" : model];
+    NSMutableString *sub = [NSMutableString stringWithString:c.isDefault ? IVLL(@"panel.default", @"Réel (non isolé)") : model];
     if (c.hasLocation && c.locationName.length) [sub appendFormat:@"  ·  📍 %@", c.locationName];
 
     UIListContentConfiguration *content = [UIListContentConfiguration subtitleCellConfiguration];
@@ -249,10 +250,10 @@
     __weak typeof(self) ws = self;
 
     IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:c.name
-                                                        message:active ? @"Conteneur actif" : nil];
+                                                        message:active ? IVLL(@"panel.active", @"Conteneur actif") : nil];
 
     if (!active) {
-        [sheet addAction:[IVAction actionWithTitle:@"Activer ce conteneur"
+        [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.activate", @"Activer ce conteneur")
                                             symbol:@"power.circle.fill"
                                              style:IVActionStyleAccentSoft
                                            handler:^{ [ws activate:c]; }]];
@@ -261,15 +262,15 @@
         // Réglages (langue & région) et auto-swipe ont leurs icônes directes sur la
         // ligne ; l'appareil (infos, lecture seule) est déplacé ici en build-11 (il
         // avait perdu son icône de ligne), avec renommer / supprimer.
-        [sheet addAction:[IVAction actionWithTitle:@"Appareil (infos)"
+        [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.device", @"Appareil (infos)")
                                             symbol:@"iphone"
                                              style:IVActionStyleDefault
                                            handler:^{ [ws showDeviceInfoFor:c]; }]];
-        [sheet addAction:[IVAction actionWithTitle:@"Renommer"
+        [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.rename", @"Renommer")
                                             symbol:@"pencil"
                                              style:IVActionStyleDefault
                                            handler:^{ [ws rename:c]; }]];
-        [sheet addAction:[IVAction actionWithTitle:@"Supprimer"
+        [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.delete", @"Supprimer")
                                             symbol:@"trash"
                                              style:IVActionStyleDestructive
                                            handler:^{ [ws delete:c]; }]];
@@ -286,8 +287,8 @@
     // l'app automatiquement après une brève confirmation (aucun bouton — la
     // fermeture est le geste). Le conteneur par défaut reste intact comme
     // repli : activer un autre conteneur ne le supprime jamais.
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Conteneur activé"
-        message:[NSString stringWithFormat:@"« %@ » est prêt.\nL'app va se fermer — rouvre-la pour l'utiliser.", c.name]
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"panel.activated", @"Conteneur activé")
+        message:[NSString stringWithFormat:IVLL(@"panel.activated.m", @"« %@ » est prêt.\nL'app va se fermer — rouvre-la pour l'utiliser."), c.name]
                                                        preferredStyle:UIAlertControllerStyleAlert];
     a.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [self presentViewController:a animated:YES completion:^{
@@ -333,11 +334,11 @@
 }
 
 - (void)rename:(IVContainer *)c {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Renommer" message:nil
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"panel.rename", @"Renommer") message:nil
                                                        preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.text = c.name; }];
-    [a addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"Enregistrer" style:UIAlertActionStyleDefault
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.cancel", @"Annuler") style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"create.save", @"Enregistrer") style:UIAlertActionStyleDefault
                                         handler:^(UIAlertAction *x) {
         if ([[IVContainerStore shared] renameContainer:c to:a.textFields.firstObject.text]) {
             [self reload];
@@ -355,11 +356,11 @@
         [self warn:@"Conteneur actif" msg:@"Bascule sur un autre conteneur avant de le supprimer."];
         return;
     }
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Supprimer ce conteneur ?"
-        message:@"Toutes ses données (comptes, réglages) seront effacées définitivement."
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"panel.delete.conf", @"Supprimer ce conteneur ?")
+        message:IVLL(@"panel.delete.msg", @"Toutes ses données (comptes, réglages) seront effacées définitivement.")
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"Supprimer" style:UIAlertActionStyleDestructive
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.cancel", @"Annuler") style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.delete", @"Supprimer") style:UIAlertActionStyleDestructive
                                         handler:^(UIAlertAction *x) {
         if ([[IVContainerStore shared] removeContainer:c]) {
             [self reload];
@@ -382,15 +383,15 @@
     NSMutableArray<NSString *> *lines = [NSMutableArray new];
     if (c.iosVersion.length) {
         NSString *build = [IVDeviceIdentity buildForIOSVersion:c.iosVersion];
-        [lines addObject:[NSString stringWithFormat:@"iOS %@%@", c.iosVersion,
+        [lines addObject:[NSString stringWithFormat:IVLL(@"device.iosFmt", @"iOS %@%@"), c.iosVersion,
                           build.length ? [NSString stringWithFormat:@" (build %@)", build] : @""]];
     } else {
-        [lines addObject:@"iOS : version réelle (non forcée)"];
+        [lines addObject:IVLL(@"device.iosReal", @"iOS : version réelle (non forcée)")];
     }
-    [lines addObject:[NSString stringWithFormat:@"Identifiant : %@", ident]];
-    [lines addObject:[NSString stringWithFormat:@"N° de modèle : %@",
+    [lines addObject:[NSString stringWithFormat:IVLL(@"device.identFmt", @"Identifiant : %@"), ident]];
+    [lines addObject:[NSString stringWithFormat:IVLL(@"device.modelFmt", @"N° de modèle : %@"),
                       [IVDeviceIdentity modelNumberForCID:c.cid region:c.regionCountry]]];
-    [lines addObject:[NSString stringWithFormat:@"N° de série : %@", [IVDeviceIdentity serialForCID:c.cid]]];
+    [lines addObject:[NSString stringWithFormat:IVLL(@"device.serialFmt", @"N° de série : %@"), [IVDeviceIdentity serialForCID:c.cid]]];
     [lines addObject:@""];
     [lines addObject:@"Ces informations sont celles répondues à Badoo (série et n° de modèle sont indicatifs, affichage seul)."];
 
@@ -398,7 +399,7 @@
                                                               message:[lines componentsJoinedByString:@"\n"]
                                                        preferredStyle:UIAlertControllerStyleAlert];
     a.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    [a addAction:[UIAlertAction actionWithTitle:@"Fermer" style:UIAlertActionStyleDefault handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.close", @"Fermer") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
@@ -411,13 +412,13 @@
     NSString *regionNow = c.regionCountry.length
         ? [IVLocaleSpoof displayNameForRegion:c.regionCountry] : @"Automatique";
 
-    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:[NSString stringWithFormat:@"Réglages — %@", c.name]
-                                                        message:@"Prend effet au prochain démarrage de l'app."];
-    [sheet addAction:[IVAction actionWithTitle:[NSString stringWithFormat:@"Langue : %@", langNow]
+    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:[NSString stringWithFormat:IVLL(@"panel.settingsFor", @"Réglages — %@"), c.name]
+                                                        message:IVLL(@"panel.settings.note", @"Prend effet au prochain démarrage de l'app.")];
+    [sheet addAction:[IVAction actionWithTitle:[NSString stringWithFormat:IVLL(@"panel.langFmt", @"Langue : %@"), langNow]
                                         symbol:@"globe"
                                          style:IVActionStyleDefault
                                        handler:^{ [ws pickLanguageFor:c]; }]];
-    [sheet addAction:[IVAction actionWithTitle:[NSString stringWithFormat:@"Région : %@", regionNow]
+    [sheet addAction:[IVAction actionWithTitle:[NSString stringWithFormat:IVLL(@"panel.regionFmt", @"Région : %@"), regionNow]
                                         symbol:@"map"
                                          style:IVActionStyleDefault
                                        handler:^{ [ws pickRegionFor:c]; }]];
@@ -426,12 +427,12 @@
 
 - (void)pickLanguageFor:(IVContainer *)c {
     NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
-    [opts addObject:[IVListOption value:@"" title:@"Automatique (système)" subtitle:nil]];
+    [opts addObject:[IVListOption value:@"" title:IVLL(@"panel.auto", @"Automatique (système)") subtitle:nil]];
     for (NSString *code in [IVLocaleSpoof supportedLanguageCodes]) {
         [opts addObject:[IVListOption value:code title:[IVLocaleSpoof displayNameForLanguage:code] subtitle:code]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Langue de l'application"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"panel.locale", @"Langue de l'application")
                                                       options:opts
                                                 selectedValue:c.appLanguage
                                                        onPick:^(IVListOption *o) {
@@ -446,12 +447,12 @@
 
 - (void)pickRegionFor:(IVContainer *)c {
     NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
-    [opts addObject:[IVListOption value:@"" title:@"Automatique (système)" subtitle:nil]];
+    [opts addObject:[IVListOption value:@"" title:IVLL(@"panel.auto", @"Automatique (système)") subtitle:nil]];
     for (NSString *code in [IVLocaleSpoof supportedRegionCodes]) {
         [opts addObject:[IVListOption value:code title:[IVLocaleSpoof displayNameForRegion:code] subtitle:code]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Pays / région"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"panel.region", @"Pays / région")
                                                       options:opts
                                                 selectedValue:c.regionCountry
                                                        onPick:^(IVListOption *o) {
@@ -487,13 +488,13 @@
 - (void)manageGlobalCamera {
     if (![IVPaths hasGlobalCameraVideo]) { [self pickGlobalCameraVideo]; return; }
     __weak typeof(self) ws = self;
-    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:@"Caméra virtuelle"
-                                                        message:@"Vidéo de vérification définie ✓ (partagée par tous les conteneurs)"];
-    [sheet addAction:[IVAction actionWithTitle:@"Changer la vidéo"
+    IVActionSheet *sheet = [[IVActionSheet alloc] initWithTitle:IVLL(@"panel.camera", @"Caméra virtuelle")
+                                                        message:IVLL(@"panel.cam.set", @"Vidéo de vérification définie ✓ (partagée par tous les conteneurs)"];
+    [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.cam.change", @"Changer la vidéo")
                                         symbol:@"video.badge.plus"
                                          style:IVActionStyleDefault
                                        handler:^{ [ws pickGlobalCameraVideo]; }]];
-    [sheet addAction:[IVAction actionWithTitle:@"Retirer la vidéo"
+    [sheet addAction:[IVAction actionWithTitle:IVLL(@"panel.cam.remove", @"Retirer la vidéo")
                                         symbol:@"video.slash"
                                          style:IVActionStyleDestructive
                                        handler:^{ [ws removeGlobalCameraVideo]; }]];
@@ -561,13 +562,13 @@
 #pragma mark - Global reset
 
 - (void)confirmReset {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Tout réinitialiser ?"
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"panel.reset", @"Tout réinitialiser ?")
         message:@"Déconnecte AUSSI le compte principal : efface tous les cookies et sessions "
                 @"Badoo du téléphone et supprime tous les conteneurs. L'app se fermera. "
                 @"Irréversible."
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"Réinitialiser" style:UIAlertActionStyleDestructive
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.cancel", @"Annuler") style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.reset", @"Réinitialiser") style:UIAlertActionStyleDestructive
                                         handler:^(UIAlertAction *x) {
         if ([[IVContainerStore shared] resetAll]) {
             // The wipe cleared the on-disk + keychain + in-memory session, but the
@@ -576,11 +577,12 @@
             // next flush. Cold-close so the next open relaunches truly logged out.
             dispatch_async(dispatch_get_main_queue(), ^{
                 UIAlertController *done = [UIAlertController
-                    alertControllerWithTitle:@"Réinitialisé"
-                                     message:@"Compte déconnecté et données effacées. "
-                                             @"L'app va se fermer — rouvre-la."
+                    alertControllerWithTitle:IVLL(@"panel.reseted", @"Réinitialisé")
+                                     message:[NSString stringWithFormat:@"%@ %@",
+                                              IVLL(@"panel.reseted.m", @"Compte déconnecté et données effacées."),
+                                              @"L'app va se fermer — rouvre-la."]
                               preferredStyle:UIAlertControllerStyleAlert];
-                [done addAction:[UIAlertAction actionWithTitle:@"Fermer"
+                [done addAction:[UIAlertAction actionWithTitle:IVLL(@"panel.close", @"Fermer")
                                                          style:UIAlertActionStyleDefault
                                                        handler:^(UIAlertAction *y) {
                     IVCloseAppForRelaunch();
@@ -599,7 +601,7 @@
 - (void)warn:(NSString *)title msg:(NSString *)msg {
     UIAlertController *a = [UIAlertController alertControllerWithTitle:title message:msg
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
@@ -655,7 +657,7 @@
     l.numberOfLines = 0;
     l.textColor = IVTheme.primaryText;
     l.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-    l.text = @"⚠️ Isolation inactive — vous êtes sur le compte réel. Ne vous connectez pas ici ; fermez complètement l'app puis rouvrez-la.";
+    l.text = [@"⚠️ " stringByAppendingString:IVLL(@"panel.isoNote", @"Isolation inactive — vous êtes sur le compte réel. Ne vous connectez pas ici ; fermez complètement l'app puis rouvrez-la.")];
     [card addSubview:l];
     [wrap addSubview:card];
     return wrap;
@@ -666,7 +668,7 @@
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     b.frame = CGRectMake(20, 24, wrap.bounds.size.width - 40, 52);
     b.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [b setTitle:@"Tout réinitialiser" forState:UIControlStateNormal];
+    [b setTitle:IVLL(@"panel.reset", @"Tout réinitialiser") forState:UIControlStateNormal];
     [b setTitleColor:UIColor.systemRedColor forState:UIControlStateNormal];
     b.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
     // Translucent glass pill so it reads as a deliberate, framed destructive action.
