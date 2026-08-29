@@ -53,11 +53,13 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-**OpenCode, 2026-08-30 — S03 (3 demandes) implémentées, code NON commité, build CI NON
-lancé.** Changements : `IVPanelVC.m` (toggle FR/EN bloc compact), `IVMapPickerVC.m` (dismiss
-clavier carte), `IVAutoSwipe.m` (paywall/rate-us/pub/starter-chips). Détaillés dans le Journal
-du 2026-08-30. Prochaine action : sur demande explicite → commit + `gh workflow run build.yml
--f ipa_url=v1.0-ipa` + release, puis validation appareil.
+**OpenCode, 2026-08-30 — S03 (3 demandes) terminé et livré : release build-18 publiée.**
+Commits `d3c5b03` (feat s03) + `4133c3b` (handoff), push branch
+`feature/s03-auto-swipe-enhancements`, run CI **33281133352** (job #18) **success** →
+release **build-18** auto-créée (Latest). Changements : `IVPanelVC.m` (toggle FR/EN bloc
+compact), `IVMapPickerVC.m` (dismiss clavier carte), `IVAutoSwipe.m` (paywall/rate-us/pub/
+starter-chips). Détaillés dans le Journal du 2026-08-30. Reste : **validation appareil
+(humain)** sur les 3 points (items S03 en « Prochaine étape »).
 
 **Rappel historique (2026-08-29) :** OpenCode avait livré **build-13** (fix ratio
 auto-swipe + keyboard dismiss + auto-detect langue/région + localisation UI 6 langues
@@ -139,6 +141,20 @@ Puis la liste historique restante (build-13/16/17) :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — build-18 livré : toggle FR/EN + dismiss clavier carte + auto-swipe autonome
+
+Suite de l'entrée S03 ci-dessous : le code (déjà décrit là) a été **commité** (`d3c5b03`),
+le handoff mis à jour (`4133c3b`), poussé sur `feature/s03-auto-swipe-enhancements`, puis
+build CI **#18** lancé (`gh workflow run build.yml -f ipa_url=v1.0-ipa`) → run
+**33281133352** `{"conclusion":"success"}`.
+
+Release **build-18** auto-créée (marquée **Latest**) : `BadooVault.ipa`,
+**81 914 596 octets**, sha256 `ad6f2d3b2b9024c07028e1ec596e6d4f9b68dc39062d69d938fb25bbbc1f8777`,
+url `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-18/BadooVault.ipa`.
+
+Validation appareil (humain) requise sur les 3 points S03 (toggle FR/EN bloc compact, dismiss
+clavier carte GPS, auto-swipe autonome paywall/pub/match) — voir « Prochaine étape ».
 
 ### 2026-08-30 — OpenCode — S03 : #1 toggle FR/EN Badoo (bloc entier réduit) + #2 clavier carte replié + #3 audit réel auto-swipe (popups/match/paywall/pub)
 
