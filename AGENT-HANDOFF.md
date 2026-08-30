@@ -53,14 +53,12 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-**OpenCode, 2026-08-30 — Fix du toggle FR/EN « ça se traduit pas » + défaut like% auto-swipe.
-Nouvelle livraison (build-26) en attente de build CI + validation.** Cause du toggle : la langue
-était gelée dans un `dispatch_once` (calculée une fois par processus) → cliquer sur EN ne
-re-rendait jamais avant redémarrage complet. Corrigé : cache invalidable via
-`IVLSetOverrideLanguage:`. Corrigé aussi le défaut like% d'un **nouveau** conteneur (50 au lieu
-de « 0 % like = 100 % dislike » pour ne pas swiper que à gauche). Isolation comptes : vérifiée,
-rien n'est perdu (les comptes sont namespacés par cid, basculer de conteneur ne supprime rien).
-Code à pousser → build CI → release build-26.
+**OpenCode, 2026-08-30 — build-26 livré (fix toggle FR/EN + défaut like% auto-swipe).** Run CI
+**33305998550** (branch `feature/s03-auto-swipe-enhancements`, HEAD `f8c9b68`) **success** →
+release **`build-26`**, `BadooVault.ipa` **81 953 979 B HTTP 200**. Base d'injection build-17.
+`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-26/BadooVault.ipa`.
+Détail dans le Journal (entrée de ce jour). À valider sur appareil : toggle EN traduit à la
+volée, auto-swipe 50/50 sur conteneur neuf, compte conservé après bascule.
 
 **OpenCode, 2026-08-30 — Ré-audit isolation terminé : AUCUNE fuite. build-25 reste la livraison
 courante, aucun re-build.** L'utilisateur a demandé de re-vérifier toute l'isolation ; audit
@@ -169,6 +167,15 @@ Puis la liste historique restante (build-13/16/17) :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — build-26 livré : fix toggle FR/EN + défaut like% auto-swipe
+
+Run CI **33305998550** (branch `feature/s03-auto-swipe-enhancements`, HEAD `f8c9b68`,
+base build-17) **success** → release **`build-26`**, `BadooVault.ipa` **81 953 979 B HTTP 200**.
+`https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-26/BadooVault.ipa`.
+Contenu : les 2 fixes de code de l'unité précédente (toggle + like%) + la vérif isolation comptes
+(documentée dans l'entrée « Fix toggle FR/EN + défaut like%… » ci-dessous). Reste : validation
+appareil (humain).
 
 ### 2026-08-30 — OpenCode — Fix toggle FR/EN + défaut like% auto-swipe + vérif isolation comptes
 
