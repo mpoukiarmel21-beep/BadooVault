@@ -53,6 +53,12 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
+**OpenCode, 2026-08-30 — Ré-audit isolation terminé : AUCUNE fuite. build-25 reste la livraison
+courante, aucun re-build.** L'utilisateur a demandé de re-vérifier toute l'isolation ; audit
+exhaustif des 8 surfaces (HOME, Keychain, CFPreferences, App Group, Device, Locale/hardening,
+Location, reset/purge) conclu **sans fuite** → aucune correction ni re-build. Détail dans le
+Journal (2026-08-30, entrée la plus récente). Reste : validation appareil (humain) build-25.
+
 **OpenCode, 2026-08-30 — build-25 livré : correction des 3 régressions signalées sur build-24.**
 Run CI **33305249336** (branche `feature/s03-auto-swipe-enhancements`, HEAD `4f6dc00`)
 **success** → release **`build-25`**, `BadooVault.ipa` 81 954 045 B **HTTP 200**.
@@ -154,6 +160,58 @@ Puis la liste historique restante (build-13/16/17) :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — Ré-audit complet d'isolation : AUCUNE fuite (confirmation post-build-25)
+
+Sur demande de l'utilisateur (« Vérifie toute l'isolation si il y a pas de fuite »), ré-audit
+exhaustif de chaque surface sur la branche `feature/s03-auto-swipe-enhancements` (HEAD `c51f6b9`,
+build-25). Verdict : **aucune fuite inter-conteneurs trouvée → aucune correction ni re-build
+nécessaires**. L'IPA build-25 déjà livré est isolé proprement.
+
+- **#1 HOME/chemins** (`IVPaths.m`/`IVHomeRedirect.m`) : `CFFIXED_USER_HOME`+`HOME`+`TMPDIR`
+  redirigés vers `<realHome>/Documents/Instances/<cid>` ; squelette Documents/Library/Caches/
+  Preferences/tmp recréé ; `controlDir` (Documents/BadooVault) et `Instances` sont disjoints.
+  Tous les sous-chemins session (Cookies/HTTPStorages/WebKit/Caches/Application Support) sont
+  sous HOME → isolés. Protection `CompleteUntilFirstUserAuthentication` (lisible pendant
+  verrou) appliquée au contrôle + ré-estampillée à chaque background (jamais le sandbox réel).
+- **#2 Keychain** (`IVKeychainHook.m`, 877 lignes) : namespace `IV:<cid>:` sur **3 classes**
+  (genp via service, inet via server, key via application-tag CFData). HIDE mode pour le
+  **défaut** (lit le keychain réel mais exclut tout item `IV:` des reads, énumérations et
+  deletes de classe) → aucun compte d'un conteneur ne survit dans la vue du compte réel.
+  `SecKeyCreateRandomKey` namespace aussi (clé device par conteneur). Purge/delete par ref
+  exacte **couvrant synchronizable iCloud** + vérification de résidu. `SecItem*/SecKey` ne sont
+  utilisés que dans ce hook (pas de Fuite hors hook confirmé par grep).
+- **#3 CFPreferences** (`IVPrefsHook.m`) : domaines non-`com.apple.*` redirigés vers
+  `<containerRoot>/Library/Preferences`, force CurrentUser pour AnyUser (jamais de sortie du
+  conteneur). Seed locale (`IVLocaleSpoof`) écrit sur le domaine **bundle-id propre (pas
+  `.GlobalPreferences`)** → reste isolé par conteneur. Position bouton floatant + override
+  langue tweak (`NSUserDefaults standardUserDefaults`) = domaine Badoo → redirigé dans le
+  conteneur quand actif, réel quand défaut : choix cohérent, pas une fuite.
+- **#4 App Group** (`IVAppGroupHook.m`) : `<containerRoot>/AppGroups/<group>` par conteneur,
+  `IVSafeGroupComponent` sanitisé (anti `..`/`/`), squelette Library/Caches/Documents recréé →
+  aucune fuite du store FBSDK cross-conteneur.
+- **#5 Device** (`IVDeviceSpoof.m`, 413 lignes) : installé **uniquement** si isolation active ;
+  UDID/IDFV/IDFA/serial/ProductType/boottime/uptime déterministes par-cid et cohérents
+  (hw.machine==ProductType, boottime↔systemUptime). **Jamais appliqué au défaut**.
+- **#6 Locale/durcissement** (`IVLocaleSpoof.m`/`IVHardening.m`) : mêmes gates ; `.lproj` résolu
+  seulement si Badoo l'embarque ; DeviceCheck/AppAttest neutralisés (isolés), AutoFill/QuickType
+  supprimé (anti fuite email entre conteneurs).
+- **#7 Location** (`IVLocationSpoof.m`) : lit `activeContainer` **en live** ; pas de fake si pas
+  de coordonnées posées ou défaut actif (`isActive = hasLocation`) → GPS réel reprend
+  (`IVReconcile`), jamais de fake location fuitée vers le défaut.
+- **#8 Core/reset** (`IVContainerStore.m`, 470 lignes) : `deleteContainerDataLocked:` purge
+  fichiers conteneur + keychain prefix `IV:<cid>:` + vidéo caméra `<cid>.mov` ; `resetAll` balaie
+  aussi le keychain `IV:` (avec vérif de résidu), les sessions réelles du défaut
+  (wipeRealSessionFiles → cookies/httpstorages/webkit/caches/app-support + prefs non-com.apple),
+  purge le keychain réel non-`IV:` (logout principal), les cookies live et le nsuserdefaults
+  cfprefsd. Atomicité Bootstrap : HOME→key→prefs→app-group doivent TOUS réussir sinon rollback
+  complet vers le réel + `isolationDegraded` (jamais de split-brain) ; spoofs uniquement si
+  `isolated` ; garde anti résume-à-chaud (exit si cid ≠ booté).
+
+**Détail honnête** : caméra virtuelle **globale** (partagée par tous les conteneurs, décidé
+build-9, hors gate `isolated`) et défaut = keychain réel (HIDE) + aucun spoof device/locale
+(comportement voulu pour le compte principal) — deux partages **par choix**, documentés, pas des
+fuites. Aucun commit de code ni re-build nécessaire ; build-25 reste la livraison courante.
 
 ### 2026-08-30 — OpenCode — build-25 : correction des 3 régressions signalées sur build-24
 
