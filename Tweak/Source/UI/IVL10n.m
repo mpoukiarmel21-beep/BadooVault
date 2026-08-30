@@ -123,40 +123,49 @@ static NSDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *IVL10nT
     return t;
 }
 
-// Langue cible courante, calculée à la 1re lecture puis mise en cache.
+// Langue cible courante. Calculée puis mise en cache pour la performance, mais le
+// cache doit être invalidable : le toggle FR/EN du panneau change la langue à la
+// volée, donc on ne peut pas geler la valeur dans un simple dispatch_once (sinon
+// « cliquer sur EN » n'aurait aucun effet avant un redémarrage complet de l'app).
+static NSString *gIVLCachedLanguage;   // nil = à recalculer
+
 NSString *IVLCurrentLanguage(void) {
-    static NSString *gLang;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSString *lang = nil;
-        NSString *ov = [[NSUserDefaults standardUserDefaults] stringForKey:@"IVLOverrideLanguage"];
-        if (ov.length) {
-            lang = [[ov componentsSeparatedByString:@"-"] firstObject];
-        } else {
-            // Langue de l'APP du conteneur ; sinon langue système du téléphone.
-            NSString *appLang = [IVLocaleSpoof deviceLanguage];
-            if (appLang.length) lang = [[appLang componentsSeparatedByString:@"-"] firstObject];
-            else {
-                NSString *sys = [NSLocale preferredLanguages].firstObject;
-                if (sys.length) lang = [[sys componentsSeparatedByString:@"-"] firstObject];
-            }
-        }
-        lang = [lang lowercaseString];
-        // Valide contre les langues réellement traduites dans la table.
-        static NSSet *known;
-        static dispatch_once_t ok;
-        dispatch_once(&ok, ^{
-            known = [NSSet setWithArray:@[@"fr", @"en", @"es", @"de", @"it", @"pt"]];
-        });
-        if (!(lang.length && [known containsObject:lang])) lang = nil; // → repli FR
-        gLang = lang;
+    if (gIVLCachedLanguage) return gIVLCachedLanguage;   // cache chaud
+    // Langues réellement traduites dans la table — cette liste est statique, on la
+    // prépare une seule fois.
+    static NSSet *known;
+    static dispatch_once_t ok;
+    dispatch_once(&ok, ^{
+        known = [NSSet setWithArray:@[@"fr", @"en", @"es", @"de", @"it", @"pt"]];
     });
-    return gLang;
+
+    NSString *lang = nil;
+    NSString *ov = [[NSUserDefaults standardUserDefaults] stringForKey:@"IVLOverrideLanguage"];
+    if (ov.length) {
+        lang = [[ov componentsSeparatedByString:@"-"] firstObject];
+    } else {
+        // Langue de l'APP du conteneur ; sinon langue système du téléphone.
+        NSString *appLang = [IVLocaleSpoof deviceLanguage];
+        if (appLang.length) lang = [[appLang componentsSeparatedByString:@"-"] firstObject];
+        else {
+            NSString *sys = [NSLocale preferredLanguages].firstObject;
+            if (sys.length) lang = [[sys componentsSeparatedByString:@"-"] firstObject];
+        }
+    }
+    lang = [lang lowercaseString];
+    // Valide contre les langues réellement traduites dans la table.
+    if (!(lang.length && [known containsObject:lang])) lang = nil; // → repli FR
+    gIVLCachedLanguage = lang;
+    return lang;
 }
 
 void IVLSetOverrideLanguage(NSString *_Nullable lang) {
     // Persiste l'override ; il est relu à chaque nouvelle exécution.
     [[NSUserDefaults standardUserDefaults] setObject:lang ?: @"" forKey:@"IVLOverrideLanguage"];
+    // Invalide le cache pour que le re-rend immédiat du panneau prenne la NEW
+    // langue dès le prochain IVLL() — c'est le fix du toggle FR/EN « ça se
+    // traduit pas » quand on clique sur EN.
+    gIVLCachedLanguage = nil;
 }
 
 NSString *IVLL(NSString *key, NSString *fallbackFR) {

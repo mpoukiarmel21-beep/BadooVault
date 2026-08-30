@@ -53,6 +53,15 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
+**OpenCode, 2026-08-30 — Fix du toggle FR/EN « ça se traduit pas » + défaut like% auto-swipe.
+Nouvelle livraison (build-26) en attente de build CI + validation.** Cause du toggle : la langue
+était gelée dans un `dispatch_once` (calculée une fois par processus) → cliquer sur EN ne
+re-rendait jamais avant redémarrage complet. Corrigé : cache invalidable via
+`IVLSetOverrideLanguage:`. Corrigé aussi le défaut like% d'un **nouveau** conteneur (50 au lieu
+de « 0 % like = 100 % dislike » pour ne pas swiper que à gauche). Isolation comptes : vérifiée,
+rien n'est perdu (les comptes sont namespacés par cid, basculer de conteneur ne supprime rien).
+Code à pousser → build CI → release build-26.
+
 **OpenCode, 2026-08-30 — Ré-audit isolation terminé : AUCUNE fuite. build-25 reste la livraison
 courante, aucun re-build.** L'utilisateur a demandé de re-vérifier toute l'isolation ; audit
 exhaustif des 8 surfaces (HOME, Keychain, CFPreferences, App Group, Device, Locale/hardening,
@@ -160,6 +169,48 @@ Puis la liste historique restante (build-13/16/17) :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — Fix toggle FR/EN + défaut like% auto-swipe + vérif isolation comptes
+
+3 demandes de l'utilisateur traitées (branch `feature/s03-auto-swipe-enhancements`, HEAD
+`c51f6b9` avant ce travail) :
+
+**1) Toggle FR/EN « ça se traduit pas » — BUG CORRIGÉ** (`UI/IVL10n.m`).
+`IVLCurrentLanguage()` calculait la langue une seule fois dans un `dispatch_once` (« à la 1re
+lecture puis mise en cache »). `langChanged:` persistait l'override + `[self reload]`, mais
+`IVLCurrentLanguage()` retournait toujours la valeur gelée au tout 1er appel (FR) → cliquer sur
+EN n'avait **aucun effet** tant que l'app n'était pas complètement relancée. Fix : le cache est
+maintenant une static `gIVLCachedLanguage` invalidable — `IVLSetOverrideLanguage:` remet à nil →
+`reload` re-rend le panneau dans la nouvelle langue immédiatement au tap.
+
+**2) Auto-swipe — vérifié de bout en bout + 1 bug de défaut corrigé.**
+Revue complète de `Util/IVAutoSwipe.m` : ordre du tick correct (match → paywall → rate-us →
+ad → popup générique → swipe), exclusion mutuelle like/dislike (fixe le « 95 % à droite »),
+repli gestes→boutons quand la carte ne bouge pas, match → phrase aléatoire + envoi (ou CTA /
+starter chip / dismiss), jamais de tap monétisé sur paywall/upsell. **BUG trouvé et corrigé**
+(`Core/IVContainer.m`) : un **nouveau** conteneur avait `autoSwipeLikePercent == 0` en mémoire
+(primitif ObjC), alors qu'un conteneur **rechargé** du disque défaut à 50 sans la clé
+(`initWithDict:`). Démarrer l'auto-swipe sur un conteneur neuf sans toucher au champ % = **0 %
+like = 100 % dislike** (ne jette que à gauche). Fix : `containerWithName:` met
+`autoSwipeLikePercent = 50` (cohérent avec le défaut disque).
+
+**3) Isolation du stockage des comptes par conteneur — VÉRIFIÉE, aucun compte perdu.**
+Les comptes restent attachés à leur conteneur et survivent aux bascules :
+- chaque conteneur a son HOME `<realHome>/Documents/Instances/<cid>` (cookies / WebKit /
+  HTTPStorages / prefs) + keychain namespacé `IV:<cid>:` + CFPreferences redirigées +
+  App Group `<containerRoot>/AppGroups` ;
+- `setActiveCID:` ne fait que changer le pointeur actif + `lastUsedAt` — **ne supprime jamais**
+  les données du conteneur inactif ; seul `removeContainer:` (avec confirmation) ou
+  `resetAll` effacent, et ils purge cid par cid (disk + keychain `IV:<cid>:` + vidéo caméra) ;
+- la liste des conteneurs vit dans `containers.plist` (control shared) donc réactiver un
+  conteneur re-applique ses redirections et retrouve la session ;
+- protections disque en `CompleteUntilFirstUserAuthentication` (lisible sous verrou) = pas de
+  « déconnecté après verrouillage » — le problème « perdre les comptes dans le futur » est
+  couvert.
+
+Prochaine étape : pousser ce travail → build CI → release **build-26** (2 fixes de code : toggle
++ like%) → validation appareil (humain) : toggle EN traduit à la volée, auto-swipe 50/50 sur
+conteneur neuf, compte conservé après bascule.
 
 ### 2026-08-30 — OpenCode — Ré-audit complet d'isolation : AUCUNE fuite (confirmation post-build-25)
 

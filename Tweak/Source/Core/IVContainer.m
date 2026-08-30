@@ -10,6 +10,11 @@ NSString *const kIVDefaultCID = @"default";
     c.name = name.length ? name : @"Container";
     c.isDefault = NO;
     c.createdAt = [NSDate date];
+    // Defaults that must match what a container RE-LOADED from disk gets when the
+    // key is absent (see initWithDict: _autoSwipeLikePercent=50). Sane swiping out
+    // of the box: 50/50 like/dislike, not "0% like = 100% dislike" — the bug where
+    // a fresh container started the auto-swipe and only ever swiped left.
+    c.autoSwipeLikePercent = 50;
     return c;
 }
 
