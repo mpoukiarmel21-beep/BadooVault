@@ -27,6 +27,7 @@ BadooVault_FILES = \
 	Source/Spoof/IVLocationSpoof.m \
 	Source/UI/IVTheme.m \
 	Source/UI/IVGlass.m \
+	Source/UI/IVL10n.m \
 	Source/UI/IVActionSheet.m \
 	Source/UI/IVFloatingButton.m \
 	Source/UI/IVListPickerVC.m \

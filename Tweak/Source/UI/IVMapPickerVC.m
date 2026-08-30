@@ -1,5 +1,6 @@
 #import "IVMapPickerVC.h"
 #import "IVTheme.h"
+#import "IVL10n.h"
 #import "../Core/IVContainer.h"
 #import "../Core/IVContainerStore.h"
 #import <MapKit/MapKit.h>
@@ -13,6 +14,7 @@
 @property (nonatomic, strong) CLGeocoder *geocoder;
 @property (nonatomic, assign) CLLocationCoordinate2D chosen;
 @property (nonatomic, copy, nullable) NSString *chosenName;
+@property (nonatomic, strong) UITapGestureRecognizer *dismissKbGesture;
 @end
 
 @implementation IVMapPickerVC
@@ -28,14 +30,22 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Localisation GPS";
+    self.title = IVLL(@"gps.title", @"Localisation GPS");
     self.view.backgroundColor = UIColor.systemBackgroundColor;
 
     self.search = [UISearchBar new];
     self.search.translatesAutoresizingMaskIntoConstraints = NO;
-    self.search.placeholder = @"Rechercher une ville…";
+    self.search.placeholder = IVLL(@"gps.search", @"Rechercher une ville…");
     self.search.delegate = self;
     self.search.searchBarStyle = UISearchBarStyleMinimal;
+
+    // Taper hors du champ (sur la carte ou le fond) replie le clavier.
+    UITapGestureRecognizer *dismissKb = [[UITapGestureRecognizer alloc]
+                                         initWithTarget:self action:@selector(dismissKeyboard)];
+    dismissKb.cancelsTouchesInView = NO;
+    dismissKb.delegate = self;
+    self.dismissKbGesture = dismissKb;
+    [self.view addGestureRecognizer:dismissKb];
 
     self.map = [MKMapView new];
     self.map.translatesAutoresizingMaskIntoConstraints = NO;
@@ -50,7 +60,7 @@
 
     self.commit = [UIButton buttonWithType:UIButtonTypeSystem];
     self.commit.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.commit setTitle:@"Activer cette position" forState:UIControlStateNormal];
+    [self.commit setTitle:IVLL(@"gps.activate", @"Activer cette position") forState:UIControlStateNormal];
     [self.commit setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     // White on the accent violet clears AA for large text (≥18pt bold, 3:1);
     // the accent is deeper than systemPurple so contrast is a touch better still.
@@ -65,7 +75,7 @@
 
     // A "Clear" button to remove the fake location entirely.
     self.navigationItem.rightBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"Effacer" style:UIBarButtonItemStylePlain
+        [[UIBarButtonItem alloc] initWithTitle:IVLL(@"gps.clear", @"Effacer") style:UIBarButtonItemStylePlain
                                         target:self action:@selector(clearLocation)];
 
     [self.view addSubview:self.search];
@@ -124,7 +134,7 @@
         [self.map addAnnotation:self.pin];
     }
     self.pin.coordinate = coord;
-    self.pin.title = self.chosenName ?: @"Position choisie";
+    self.pin.title = self.chosenName ?: IVLL(@"gps.pin", @"Position choisie");
     [self.map setCenterCoordinate:coord animated:YES];
     [self refreshCommitState];
 
@@ -155,17 +165,23 @@
 }
 
 // Ignore long-presses that land on an annotation view (the pin) so grabbing the
-// pin drags it (MapKit) instead of dropping a second pin underneath.
+// pin drags it (MapKit) instead of dropping a second pin underneath. Also ignore
+// taps/view touches on the search bar so it stays fully interactive.
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gr shouldReceiveTouch:(UITouch *)touch {
     UIView *v = touch.view;
     while (v) {
         if ([v isKindOfClass:[MKAnnotationView class]]) return NO;
+        if (gr == self.dismissKbGesture && ([v isKindOfClass:[UISearchBar class]] || [v isKindOfClass:[UITextField class]])) return NO;
         v = v.superview;
     }
     return YES;
 }
 
 #pragma mark - Search
+
+- (void)dismissKeyboard {
+    [self.search resignFirstResponder];
+}
 
 - (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
     [searchBar resignFirstResponder];
@@ -237,10 +253,10 @@
 }
 
 - (void)warnLocationSaveFailed {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Échec de l'enregistrement"
-        message:@"La localisation n'a pas pu être enregistrée (écriture disque échouée). Réessaie."
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"gps.savefail.t", @"Échec de l'enregistrement")
+        message:IVLL(@"gps.savefail.m", @"La localisation n'a pas pu être enregistrée (écriture disque échouée). Réessaie.")
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 

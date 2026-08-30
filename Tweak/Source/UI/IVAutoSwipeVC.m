@@ -1,5 +1,6 @@
 #import "IVAutoSwipeVC.h"
 #import "IVTheme.h"
+#import "IVL10n.h"
 #import "IVFloatingButton.h"
 #import "../Core/IVContainerStore.h"
 #import "../Util/IVAutoSwipe.h"
@@ -26,7 +27,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Auto-swipe";
+    self.title = IVLL(@"autoswipe.title", @"Auto-swipe");
     self.view.backgroundColor = IVTheme.panelBackground;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
 
@@ -42,7 +43,7 @@
     bar.compactAppearance = ap;
 
     self.navigationItem.rightBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"Enregistrer" style:UIBarButtonItemStyleDone
+        [[UIBarButtonItem alloc] initWithTitle:IVLL(@"autoswipe.save", @"Enregistrer") style:UIBarButtonItemStyleDone
                                         target:self action:@selector(saveAndPop)];
     [self buildForm];
 }
@@ -74,46 +75,46 @@
         [stack.widthAnchor constraintEqualToAnchor:scroll.widthAnchor constant:-36],
     ]];
 
-    [stack addArrangedSubview:[self sectionTitle:@"Phrases envoyées sur un match"]];
-    [stack addArrangedSubview:[self hint:@"Une phrase par ligne. À chaque match, le bot en envoie une au hasard. Laisse vide pour liker sans écrire."]];
+    [stack addArrangedSubview:[self sectionTitle:IVLL(@"autoswipe.phrases", @"Phrases envoyées sur un match")]];
+    [stack addArrangedSubview:[self hint:IVLL(@"autoswipe.phrasesHint", @"Une phrase par ligne. À chaque match, le bot en envoie une au hasard. Laisse vide pour liker sans écrire.")]];
     self.phrasesView = [self makeTextView];
     [self.phrasesView.heightAnchor constraintGreaterThanOrEqualToConstant:72].active = YES;
     self.phrasesView.text = [self.container.autoSwipeMessages componentsJoinedByString:@"\n"] ?: @"";
     [stack addArrangedSubview:self.phrasesView];
 
-    [stack addArrangedSubview:[self sectionTitle:@"Méthode"]];
-    self.methodControl = [[UISegmentedControl alloc] initWithItems:@[ @"Boutons", @"Gestes" ]];
+    [stack addArrangedSubview:[self sectionTitle:IVLL(@"autoswipe.method", @"Méthode")]];
+    self.methodControl = [[UISegmentedControl alloc] initWithItems:@[ IVLL(@"autoswipe.buttons", @"Boutons"), IVLL(@"autoswipe.gestures", @"Gestes") ]];
     self.methodControl.selectedSegmentIndex = (self.container.autoSwipeMethod == 1) ? 1 : 0;
     self.methodControl.selectedSegmentTintColor = IVTheme.accent;
     [self.methodControl setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.secondaryText } forState:UIControlStateNormal];
     [self.methodControl setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.onAccent } forState:UIControlStateSelected];
     [self.methodControl.heightAnchor constraintEqualToConstant:36].active = YES;
     [stack addArrangedSubview:self.methodControl];
-    [stack addArrangedSubview:[self hint:@"Boutons : appuie sur le ✕ / ♥ de Badoo (robuste). Gestes : simule un glissement du doigt gauche/droite (repli automatique sur Boutons si indisponible)."]];
+    [stack addArrangedSubview:[self hint:IVLL(@"autoswipe.methodHint", @"Boutons : appuie sur le ✕ / ♥ de Badoo (robuste). Gestes : simule un glissement du doigt gauche/droite (repli automatique sur Boutons si indisponible).")]];
 
-    [stack addArrangedSubview:[self sectionTitle:@"Paramètres de swipe"]];
-    self.countField = [self fieldRowInStack:stack label:@"Nombre de swipes (0 = illimité)"
+    [stack addArrangedSubview:[self sectionTitle:IVLL(@"autoswipe.params", @"Paramètres de swipe")]];
+    self.countField = [self fieldRowInStack:stack label:IVLL(@"autoswipe.count", @"Nombre de swipes (0 = illimité)")
                                        value:(self.container.autoSwipeCount > 0 ? [NSString stringWithFormat:@"%ld", (long)self.container.autoSwipeCount] : @"0")];
     self.countField.keyboardType = UIKeyboardTypeNumberPad;
 
     NSInteger like = self.container.autoSwipeLikePercent;
     if (like < 0 || like > 100) like = 50;
-    self.likeField = [self fieldRowInStack:stack label:@"% de like (droite)"
-                                      value:[NSString stringWithFormat:@"%ld", (long)like]];
+    self.likeField = [self fieldRowInStack:stack label:IVLL(@"autoswipe.like", @"% de like (droite)")
+                                       value:[NSString stringWithFormat:@"%ld", (long)like]];
     self.likeField.keyboardType = UIKeyboardTypeNumberPad;
     [self.likeField addTarget:self action:@selector(likeChanged) forControlEvents:UIControlEventEditingChanged];
 
-    self.dislikeField = [self fieldRowInStack:stack label:@"% de dislike (gauche)"
+    self.dislikeField = [self fieldRowInStack:stack label:IVLL(@"autoswipe.dislike", @"% de dislike (gauche)")
                                          value:[NSString stringWithFormat:@"%ld", (long)(100 - like)]];
     self.dislikeField.keyboardType = UIKeyboardTypeNumberPad;
     [self.dislikeField addTarget:self action:@selector(dislikeChanged) forControlEvents:UIControlEventEditingChanged];
 
-    self.minField = [self fieldRowInStack:stack label:@"Délai min entre actions (s)"
+    self.minField = [self fieldRowInStack:stack label:IVLL(@"autoswipe.min", @"Délai min entre actions (s)")
                                      value:(self.container.autoSwipeMinDelay >= 1 ? [self fmt:self.container.autoSwipeMinDelay] : @"3")];
-    self.maxField = [self fieldRowInStack:stack label:@"Délai max entre actions (s)"
+    self.maxField = [self fieldRowInStack:stack label:IVLL(@"autoswipe.max", @"Délai max entre actions (s)")
                                      value:(self.container.autoSwipeMaxDelay >= 1 ? [self fmt:self.container.autoSwipeMaxDelay] : @"7")];
 
-    [stack addArrangedSubview:[self hint:@"Détection best-effort : le bot agit sur l'UI de Badoo (like/dislike + popup « match »). Selon la version de Badoo, un réglage sur l'appareil peut être nécessaire."]];
+    [stack addArrangedSubview:[self hint:IVLL(@"autoswipe.bestEffort", @"Détection best-effort : le bot agit sur l'UI de Badoo (like/dislike + popup « match »). Selon la version de Badoo, un réglage sur l'appareil peut être nécessaire.")]];
 
     self.runButton = [self makeRunButton];
     [self.runButton.heightAnchor constraintEqualToConstant:52].active = YES;
@@ -208,7 +209,7 @@
 
 - (void)refreshRunButton {
     BOOL running = [IVAutoSwipe shared].isRunning;
-    [self.runButton setTitle:(running ? @"Arrêter l'auto-swipe" : @"Démarrer l'auto-swipe") forState:UIControlStateNormal];
+    [self.runButton setTitle:(running ? IVLL(@"autoswipe.stop", @"Arrêter l'auto-swipe") : IVLL(@"autoswipe.start", @"Démarrer l'auto-swipe")) forState:UIControlStateNormal];
     self.runButton.backgroundColor = running ? IVTheme.elevatedSurface : IVTheme.accent;
     [self.runButton setTitleColor:(running ? IVTheme.primaryText : IVTheme.onAccent) forState:UIControlStateNormal];
     self.runButton.layer.borderWidth = running ? 1 : 0;
@@ -265,10 +266,10 @@
 }
 
 - (void)warn {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Échec"
-        message:@"La configuration n'a pas pu être enregistrée (écriture disque). Réessaie."
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"autoswipe.fail.t", @"Échec")
+        message:IVLL(@"autoswipe.fail.m", @"La configuration n'a pas pu être enregistrée (écriture disque). Réessaie.")
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 

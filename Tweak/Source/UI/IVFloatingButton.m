@@ -1,6 +1,7 @@
 #import "IVFloatingButton.h"
 #import "IVPanelVC.h"
 #import "IVTheme.h"
+#import "IVL10n.h"
 
 #pragma mark - Overlay window (hosts the button AND the panel)
 
@@ -164,8 +165,8 @@ static const CGFloat kIVEdgeMargin = 18.0;   // breathing room from the screen e
     btn.adjustsImageWhenHighlighted = NO;
     [btn addTarget:self action:@selector(onTap) forControlEvents:UIControlEventTouchUpInside];
     btn.isAccessibilityElement = YES;
-    btn.accessibilityLabel = @"Badooscale";
-    btn.accessibilityHint = @"Ouvre la gestion des conteneurs";
+    btn.accessibilityLabel = IVLL(@"fb.accessibilityLabel", @"Badooscale");
+    btn.accessibilityHint = IVLL(@"fb.accessibilityHint", @"Ouvre la gestion des conteneurs");
     [container addSubview:btn];
 
     [container addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPan:)]];

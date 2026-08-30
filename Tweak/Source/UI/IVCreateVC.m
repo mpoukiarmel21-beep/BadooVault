@@ -1,6 +1,7 @@
 #import "IVCreateVC.h"
 #import "IVListPickerVC.h"
 #import "IVTheme.h"
+#import "IVL10n.h"
 #import "../Core/IVContainer.h"
 #import "../Core/IVContainerStore.h"
 #import "../Spoof/IVDeviceIdentity.h"
@@ -45,7 +46,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = self.editing ? @"Modifier" : @"Nouveau conteneur";
+    self.title = self.editing ? IVLL(@"create.titleEdit", @"Modifier") : IVLL(@"create.titleNew", @"Nouveau conteneur");
     self.view.backgroundColor = IVTheme.panelBackground;
     // Pin Dark so the grouped table, its separators and system controls read as
     // one dark surface with the pickers pushed from here.
@@ -85,7 +86,7 @@
 - (void)save {
     NSString *name = [self.nameField.text stringByTrimmingCharactersInSet:
                       NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (name.length == 0) name = @"Conteneur";
+    if (name.length == 0) name = IVLL(@"create.defaultName", @"Conteneur");
     NSString *marketing = [IVDeviceIdentity marketingNameForIdentifier:self.chosenModel];
     IVContainerStore *store = [IVContainerStore shared];
 
@@ -117,10 +118,10 @@
 }
 
 - (void)warnSaveFailed {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Échec de l'enregistrement"
-        message:@"Le conteneur n'a pas pu être enregistré (écriture disque échouée). Réessaie."
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:IVLL(@"create.savefail.t", @"Échec de l'enregistrement")
+        message:IVLL(@"create.savefail.m", @"Le conteneur n'a pas pu être enregistré (écriture disque échouée). Réessaie.")
                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:IVLL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
@@ -130,7 +131,7 @@
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return 3; }
 
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
-    return [NSString stringWithFormat:@"Modèles limités à la puce réelle (%@). Chaque conteneur répond ces informations à Badoo.",
+    return [NSString stringWithFormat:IVLL(@"create.footFmt", @"Modèles limités à la puce réelle (%@). Chaque conteneur répond ces informations à Badoo."),
             [IVDeviceIdentity realChipFamily]];
 }
 
@@ -141,7 +142,7 @@
         if (!self.nameField) {
             self.nameField = [[UITextField alloc] initWithFrame:CGRectInset(cell.contentView.bounds, 16, 0)];
             self.nameField.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            self.nameField.placeholder = @"Nom du conteneur";
+            self.nameField.placeholder = IVLL(@"create.namePlaceholder", @"Nom du conteneur");
             self.nameField.text = self.editing.name;
             self.nameField.textColor = IVTheme.primaryText;
             self.nameField.clearButtonMode = UITextFieldViewModeWhileEditing;
@@ -157,13 +158,13 @@
     cell.textLabel.textColor = IVTheme.primaryText;
     cell.detailTextLabel.textColor = IVTheme.secondaryText;
     if (ip.row == 1) {
-        cell.textLabel.text = @"Modèle d'appareil";
+        cell.textLabel.text = IVLL(@"create.modelLabel", @"Modèle d'appareil");
         cell.detailTextLabel.text = [IVDeviceIdentity marketingNameForIdentifier:self.chosenModel];
     } else {
         NSString *build = [IVDeviceIdentity buildForIOSVersion:self.chosenIOS];
-        cell.textLabel.text = @"Version iOS";
+        cell.textLabel.text = IVLL(@"create.iosLabel", @"Version iOS");
         cell.detailTextLabel.text = build.length
-            ? [NSString stringWithFormat:@"%@ (%@)", self.chosenIOS, build]
+            ? [NSString stringWithFormat:IVLL(@"create.iosCellFmt", @"%@ (%@)"), self.chosenIOS, build]
             : self.chosenIOS;
     }
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -188,7 +189,7 @@
         [opts addObject:[IVListOption value:m.identifier title:m.marketingName subtitle:m.identifier]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Modèle d'appareil"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"create.pickModel", @"Modèle d'appareil")
                                                       options:opts
                                                 selectedValue:self.chosenModel
                                                        onPick:^(IVListOption *o) {
@@ -202,10 +203,10 @@
     NSMutableArray<IVListOption *> *opts = [NSMutableArray new];
     for (NSString *v in [IVDeviceIdentity iosVersions]) {
         NSString *build = [IVDeviceIdentity buildForIOSVersion:v];
-        [opts addObject:[IVListOption value:v title:v subtitle:build.length ? [@"build " stringByAppendingString:build] : nil]];
+        [opts addObject:[IVListOption value:v title:v subtitle:build.length ? [NSString stringWithFormat:IVLL(@"create.buildFmt", @"build %@"), build] : nil]];
     }
     __weak typeof(self) ws = self;
-    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:@"Version iOS"
+    IVListPickerVC *p = [[IVListPickerVC alloc] initWithTitle:IVLL(@"create.pickIOS", @"Version iOS")
                                                       options:opts
                                                 selectedValue:self.chosenIOS
                                                        onPick:^(IVListOption *o) {

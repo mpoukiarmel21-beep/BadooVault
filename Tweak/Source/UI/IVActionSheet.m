@@ -1,5 +1,6 @@
 #import "IVActionSheet.h"
 #import "IVTheme.h"
+#import "IVL10n.h"
 
 #pragma mark - IVAction
 
@@ -79,7 +80,7 @@ static const CGFloat kIVSidePad   = 18.0;   // text inset inside a button
 
     // Auto-append a Cancel row so callers never have to.
     if (!self.cancelButton) {
-        [self.actions addObject:[IVAction actionWithTitle:@"Annuler"
+        [self.actions addObject:[IVAction actionWithTitle:IVLL(@"common.cancel", @"Annuler")
                                                    symbol:nil
                                                     style:IVActionStyleDefault
                                                   handler:nil]];
