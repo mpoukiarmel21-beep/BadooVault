@@ -53,13 +53,22 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-**OpenCode, 2026-08-30 — S03 (3 demandes) terminé et livré : release build-18 publiée.**
-Commits `d3c5b03` (feat s03) + `4133c3b` (handoff), push branch
-`feature/s03-auto-swipe-enhancements`, run CI **33281133352** (job #18) **success** →
-release **build-18** auto-créée (Latest). Changements : `IVPanelVC.m` (toggle FR/EN bloc
-compact), `IVMapPickerVC.m` (dismiss clavier carte), `IVAutoSwipe.m` (paywall/rate-us/pub/
-starter-chips). Détaillés dans le Journal du 2026-08-30. Reste : **validation appareil
-(humain)** sur les 3 points (items S03 en « Prochaine étape »).
+**OpenCode, 2026-08-30 — build-24 livré (correction base) : release build-24 publiée.**
+Run CI **33304594183** (branche `feature/s03-auto-swipe-enhancements`, commit `2262d27`)
+**success en 1m43s** → release **`build-24`**, `BadooVault.ipa` 81 954 035 B **HTTP 200**.
+Base d'injection : **build-17** (la bonne, demande utilisateur — IPA décrypté avec le
+nouveau design du bouton flottant). Fix CI porté sur la branche dans `2262d27` :
+`insert_dylib` sauté quand la load command `BadooVault.dylib` existe déjà (le `cp`
+écrase le dylib en place) + `timeout-minutes: 12` — sans cela, la ré-injection dans
+build-17 bloquait la CI >1h. **Toggle FR/EN aligné sur la demande exacte 40×18 @9 pt**
+(la branche était en 36×16 @8). Reste : **validation appareil (humain)** sur les
+3 points (items S03 en « Prochaine étape »).
+
+⚠️ **Correction importante** : une tentative antérieure sur `master` (build-20/build-23)
+partait de la MAUVAISE branche (ancienne série) et de la base stock → l'utilisateur a
+signalé « l'ancienne version ». La bonne référence est **cette branche
+`feature/s03-auto-swipe-enhancements`** (base de build-17/18/24). Ne PAS rebâtir depuis
+`master`.
 
 **Rappel historique (2026-08-29) :** OpenCode avait livré **build-13** (fix ratio
 auto-swipe + keyboard dismiss + auto-detect langue/région + localisation UI 6 langues
@@ -141,6 +150,35 @@ Puis la liste historique restante (build-13/16/17) :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — build-24 : livraison corrigée sur la BONNE base (feature/s03 + build-17)
+
+Correction majeure de base : la livraison précédente (build-20/23 depuis `master` + base
+stock) était l'ANCIENNE version. L'utilisateur a signalé le désaccord et demandé de
+repartir de la **nouvelle version** = build-17.
+
+- **Diagnostic** : build-17 provient de la branche **`feature/s03-auto-swipe-enhancements`**
+  (commit `0876d78` « bouton flottant redessine … carre translucide noir … cadre violet »),
+  PAS de `master`. Cette branche contient déjà S03 complet : toggle FR/EN (`d3c5b03`)
+  + fix toggle (`bc0d22b`), dismiss clavier carte GPS, auto-swipe autonome
+  (paywall/rate-us/pub/starter-chips), localisation IVL10n 6 langues (build-13/16).
+- **Vérifs statiques** : toggle présent dans `IVPanelVC.m` (makeLangToggle/langChanged),
+  dismiss clavier dans `IVMapPickerVC.m` (`dismissTap`, `cancelsTouchesInView=NO`,
+  `shouldReceiveTouch`), auto-swipe autonome dans `IVAutoSwipe.m` (`scanWindows`
+  multi-fenêtres, `handleMatch` msg aléatoire + envoi, `handleInterruptivePopup`),
+  `IVL10n.h/m` + Makefile OK.
+- **Ajustements (commit `2262d27`)** :
+  - Toggle FR/EN **aligné sur la demande exacte 40×18 @9 pt** (la branche était en 36×16 @8).
+  - **Fix CI porté de master** : `insert_dylib` sauté si la load command `BadooVault.dylib`
+    existe déjà (base build-17 déjà injectée) + `timeout-minutes: 12` sur
+    « Inject & Package IPA » (sans cela la ré-injection bloquait >1h).
+- **Build vert** : run `33304594183` (branch `feature/s03-auto-swipe-enhancements`,
+  HEAD `2262d27`) **success 1m43s** → release **`build-24`** / `BadooVault.ipa`
+  **81 954 035 B**, **HTTP 200 vérifié**.
+- **Lien livré** :
+  `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-24/BadooVault.ipa`
+- **Avertissement** : ne plus rebâtir depuis `master` (ancienne série). La référence est
+  `feature/s03-auto-swipe-enhancements`, base d'injection build-17.
 
 ### 2026-08-30 — OpenCode — Nettoyage dossier MONTAGE : seule la build-18 reste
 
