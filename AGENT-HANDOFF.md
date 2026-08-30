@@ -53,16 +53,20 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-**OpenCode, 2026-08-30 — build-24 livré (correction base) : release build-24 publiée.**
-Run CI **33304594183** (branche `feature/s03-auto-swipe-enhancements`, commit `2262d27`)
-**success en 1m43s** → release **`build-24`**, `BadooVault.ipa` 81 954 035 B **HTTP 200**.
-Base d'injection : **build-17** (la bonne, demande utilisateur — IPA décrypté avec le
-nouveau design du bouton flottant). Fix CI porté sur la branche dans `2262d27` :
-`insert_dylib` sauté quand la load command `BadooVault.dylib` existe déjà (le `cp`
-écrase le dylib en place) + `timeout-minutes: 12` — sans cela, la ré-injection dans
-build-17 bloquait la CI >1h. **Toggle FR/EN aligné sur la demande exacte 40×18 @9 pt**
-(la branche était en 36×16 @8). Reste : **validation appareil (humain)** sur les
-3 points (items S03 en « Prochaine étape »).
+**OpenCode, 2026-08-30 — build-25 livré : correction des 3 régressions signalées sur build-24.**
+Run CI **33305249336** (branche `feature/s03-auto-swipe-enhancements`, HEAD `4f6dc00`)
+**success** → release **`build-25`**, `BadooVault.ipa` 81 954 045 B **HTTP 200**.
+Base d'injection : **build-17** (la bonne). Les 3 corrections livrées :
+- **#1 Toggle FR/EN agrandi** : bloc porté de 40×18 → **60×26**, police **@11 pt**
+  (le 40×18 @9 rognait les labels → « …/.. » ; désormais « FR »/« EN » lisibles).
+- **#2 Crash carte GPS corrigé (VITAL)** : bug de sélecteur — le geste était enregistré avec
+  `@selector(dismissKeyboard)` (0 arg) alors que la méthode est `dismissKeyboard:` (1 arg) →
+  **unrecognized selector → crash au premier tap à côté du champ**. Corrigé en
+  `@selector(dismissKeyboard:)` (`IVMapPickerVC.m`).
+- **#3 Auto-swipe popups vérifié (aucun changement requis)** : paywall/limite (back-off sans
+  tap d'argent), rate-us (not now), pub (close X), popup générique + bouton OK exact sont déjà
+  gérés dans `IVAutoSwipe.m` — complet.
+Reste : **validation appareil (humain)** sur les 3 points (items S03 en « Prochaine étape »).
 
 ⚠️ **Correction importante** : une tentative antérieure sur `master` (build-20/build-23)
 partait de la MAUVAISE branche (ancienne série) et de la base stock → l'utilisateur a
@@ -150,6 +154,37 @@ Puis la liste historique restante (build-13/16/17) :
   quelques labels composés) faute de clé — non bloquant, à compléter sur demande.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — build-25 : correction des 3 régressions signalées sur build-24
+
+L'utilisateur a validé build-24 (bonne base) mais signalé 3 régressions : (1) toggle FR/EN trop
+petit (labels en « …/.. »), (2) crash de la carte fake GPS quand on tape à côté pour fermer le
+clavier, (3) vérifier la détection de tous les popups Badoo dans l'auto-swipe.
+
+- **#1 Toggle agrandi** (`Tweak/Source/UI/IVPanelVC.m`, `makeLangToggle`) : container
+  `CGRectMake(0,0,40,18)` → **`CGRectMake(0,0,60,26)`** et police `systemFontOfSize:9` →
+  **`systemFontOfSize:11`** semibold. Le 40×18 @9 rognait les titres de segments (le
+  `UISegmentedControl` tronquait en « …/.. ») ; 60×26 @11 affiche proprement « FR »/« EN ».
+- **#2 Crash carte GPS corrigé (VITAL)** (`IVMapPickerVC.m`, `viewDidLoad`) : le
+  `UITapGestureRecognizer` était câblé sur `action:@selector(dismissKeyboard)` **sans `:`**
+  alors que la méthode est `dismissKeyboard:` (avec argument) → au premier tap hors du champ,
+  UIKit envoie `dismissKeyboard` (0 arg) non reconnu → **crash unrecognized selector** précisément
+  au geste de repli. Corrigé en `@selector(dismissKeyboard:)`.
+- **#3 Auto-swipe popups — audité, complet.** Vérifié dans `IVAutoSwipe.m` : l'ordre du tick est
+  match → paywall → rate-us → ad → popup générique → swipe. Paywall/limite quotidienne
+  (`handlePaywallInControls`) = back-off sans jamais taper un bouton acheté (`IVMoneyAvoidKeywords`) ;
+  rate-us (`handleRateUsInControls`) = dismiss « not now/later » ; pub (`handleAdBreakInControls`) =
+  close via X/« skip ad »/« close ad » (jamais un CTA d'install) ; popup « question + OK »
+  (`handleInterruptivePopupInControls`) = rejette via `IVContinueKeywords` ou un titre **exact**
+  d'`IVOKTitles`. Aucun changement de code nécessaire sur ce point.
+
+Commit `4f6dc00` poussé sur `feature/s03-auto-swipe-enhancements`. Build CI run **33305249336**
+success → release **`build-25`** / `BadooVault.ipa` **81 954 045 B**, **HTTP 200 vérifié**.
+- **Lien** :
+  `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-25/BadooVault.ipa`
+
+Reste : validation appareil (humain) — toggle FR/EN lisible, plus aucun crash sur la carte GPS,
+auto-swipe autonome sur les popups Badoo.
 
 ### 2026-08-30 — OpenCode — build-24 : livraison corrigée sur la BONNE base (feature/s03 + build-17)
 
