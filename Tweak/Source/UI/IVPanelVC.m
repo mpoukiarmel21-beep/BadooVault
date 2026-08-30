@@ -131,7 +131,7 @@
     ]];
     // Conteneur maître à taille bloquée — c'est CETTE frame qui définit la taille
     // réelle du bloc; le seg est mis à l'échelle à l'intérieur (autoresizing).
-    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 40, 18)];
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 60, 26)];
     container.clipsToBounds = YES;
     seg.frame = container.bounds;
     seg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -141,7 +141,7 @@
     if (@available(iOS 13.0, *)) {
         seg.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     }
-    UIFont *segFont = [UIFont systemFontOfSize:9 weight:UIFontWeightSemibold];
+    UIFont *segFont = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
     [seg setTitleTextAttributes:@{ NSForegroundColorAttributeName: IVTheme.onAccent,
                                    NSFontAttributeName: segFont }
                        forState:UIControlStateSelected];

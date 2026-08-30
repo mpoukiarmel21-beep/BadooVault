@@ -55,7 +55,7 @@
     // (long-press pin, pan, pinch) ; on n'agit que si la search bar est first
     // responder, donc jamais de faux repli.
     UITapGestureRecognizer *dismissTap = [[UITapGestureRecognizer alloc]
-                                          initWithTarget:self action:@selector(dismissKeyboard)];
+                                          initWithTarget:self action:@selector(dismissKeyboard:)];
     dismissTap.cancelsTouchesInView = NO;
     dismissTap.delegate = self;
     [self.view addGestureRecognizer:dismissTap];
