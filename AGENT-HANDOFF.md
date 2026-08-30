@@ -26,20 +26,22 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Aucun agent actif. **Build-12 livré** (commit `9ce0573`, run 33138251124 verte →
-release `build-12`, `BadooVault.ipa`, 81 914 598 B). Traitait le rapport 3 problèmes appareil
-sur build-11 : #1 langue/région — l'UI de Badoo se rend maintenant dans la langue du conteneur
-(swap du main bundle par `IVLocalizedBundle` + `.lproj` choisi, `preferredLocalizations`,
-swizzle NSUserDefaults `AppleLanguages`/`AppleLocale`) ; #2 caméra virtuelle — la photo capturée
-est redressée en vertical téléphone (dérive `CGImagePropertyOrientation` du `preferredTransform`,
-`imageByApplyingCGOrientation:` + garantie portrait) ; #3 durcissement isolation — seed
-`AppleLanguages`/`AppleLocale` déplacé du domaine global `.GlobalPreferences` vers le domaine
-bundle-id de l'app (isolé par redirection), interception NSUserDefaults par-conteneur. Reste :
-validation appareil (humain).
+Aucun agent actif. **Build-20 livré** (commit `99d97e7`, run 33285456681 verte →
+release `build-20`, `BadooVault.ipa`, 81 933 997 B HTTP 200). Localisation FR/EN complète +
+toggle réduit + fix clavier carte GPS + auto-swipe autonome (audit). Voir Journal
+2026-08-30. Reste : validation appareil (humain), dont la bascule FR/EN et l'auto-swipe.
 
 ## Prochaine étape
 
-**Valider build-12 sur appareil** (Sideloadly, iOS 17+) :
+**Valider build-20 sur appareil** (Sideloadly, iOS 17+) :
+0. **Toggle FR/EN** — ouvrir le panneau : la bascule compacte 40×18 doit passer toute l'UI en
+   anglais puis en français à la volée ; l'override doit survivre au redémarrage ; vérifier le
+   rendu à 9 pt (pas de troncature).
+   **Auto-swipe** — démarrer une session de swipe : au matcher, le tweak doit taper une phrase au
+   hasard dans le composer, l'envoyer, puis reprendre le swipe ; les popups Badoo (plus de likes,
+   « vous avez été très occupé »…) doivent être fermés automatiquement.
+   **Clavier carte GPS** — ouvrir le champ de recherche + clavier, taper à côté : le clavier doit
+   se fermer (sans casser la recherche).
 1. **#1 langue/région** — activer un conteneur avec langue = anglais (ou autre) + région, relancer
    à froid : l'UI de Badoo doit s'afficher dans la langue choisie (plus « reste en français »).
    *Limite : ne marche que si Badoo embarque le `.lproj` de la langue ; sinon l'UI reste telle
@@ -62,6 +64,46 @@ validation appareil (humain).
 - `BPEPushNotificationService.appex` conservée telle quelle ; re-signée par Sideloadly.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — build-20 : localisation FR/EN complète + toggle réduit 40×18 + fix clavier carte GPS + audit auto-swipe autonome
+
+Trois demandes utilisateur traitées, toutes menées à l'IPA verte livrée.
+
+**#1 — Localisation FR/EN complète de l'UI + bascule réduite dont le BLOG ENTIER est compact.**
+- Nouveau `Tweak/Source/UI/IVL10n.{h,m}` : API `IVLL(key, fallbackFR)`, `IVLCurrentLanguage()`,
+  `IVLSetOverrideLanguage(NSString *_Nullable lang)` ; langue cible = langue téléphone sinon
+  override persisté (`IVOverrideLanguage`) sinon FR. Table FR/EN complète de tous les écrans
+  (panel, create, action sheet, floating, auto-swipe VC, map picker). **106 clés référencées,
+   toutes présentes dans la table** (vérification par script PowerShell).
+- `IVPanelVC.m` + `IVCreateVC.m` : toutes les chaînes en dur remplacées par `IVLL(...)` (y compris
+  `create.save` ajoutée, `device.buildFmt` = `build %@`, bandeau dégradé, reset, footer…).
+- **Toggle FR/EN** (`makeLangToggle` + `langChanged:`) : bloc ENTIER compact 40×18 @9 pt
+  (`CGRectMake(0,0,40,18)`, `systemFontOfSize:9 weight:Semibold`), segment sélectionné suit la
+  langue (`IVLCurrentLanguage`), `selectedSegmentTintColor = IVTheme.accent`, changement →
+  `IVLSetOverrideLanguage(@"en"|@"fr")` + `reload`. Intégré en `leftBarButtonItems` à côté du
+  bouton fermer. Confirmé par lecture (lignes 118-146).
+- `Tweak/Makefile` : `Source/UI/IVL10n.m` ajouté aux fichiers.
+
+**#2 — Fix clavier de la carte de localisation** (`IVMapPickerVC.m`, session précédente,
+revérifié) : geste tap `dismissKbGesture` (`cancelsTouchesInView = NO`), `shouldReceiveTouch:`
+fusionné qui retourne NO quand le geste tombe sur UISearchBar/UITextField (ligne 174) →
+le clavier disparaît quand on tape à côté, sans casser la saisie.
+
+**#3 — Audit auto-swipe : déjà autonome, aucune modif nécessaire.** `IVAutoSwipe.m` implémente
+déjà tout : scan multi-fenêtres par `windowLevel` DÉCROISSANT (popups d'abord) ; sur match il
+tape une **phrase au hasard** (`_messages[arc4random_uniform(count)]`, configurable via
+`c.autoSwipeMessages`) et envoie (ouvre le composer via le CTA sinon dismiss) ; gère les popups
+interruptifs (continuer/OK, jamais un bouton argent/destructif) ; puis `scheduleNextTick` →
+retour à la boucle de swipe. Comporte exactement « détecte toutes les fenêtres Badoo, écrit un
+message si match, l'envoie, puis retour au swipe ».
+
+Build : commit `99d97e7` poussé sur `master` (`ba78cef..99d97e7`, 9 fichiers, 392+/112-).
+Base IPA stock `com.badoo.Badoo_5.467.0_und3fined.ipa` (83 535 485 B, locale `D:\IPA APP\`)
+hébergée en release `base-5.467.0-stock`. Run CI **33285456681** (build.yml, `ipa_url=…/base-5.467.0-stock/…`) **success** (1m46s) → release **build-20**, `BadooVault.ipa` 81 933 997 B,
+HTTP 200 vérifié. Ancien run CI bloqué sur l'ancien commit (`ba78cef`) annulé (`33282233452`).
+
+Limites honnêtes redites : validation device (humain) de la bascule FR/EN et de l'auto-swipe ;
+#3 reste heuristique selon la version de Badoo ; ne pilote que l'UI native de Badoo.
 
 ### 2026-08-28 — Claude Code — build-12 : #1 langue/région appliquée à l'UI + #2 photo caméra redressée verticale + #3 durcissement isolation langue
 
