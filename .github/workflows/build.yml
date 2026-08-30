@@ -96,6 +96,7 @@ jobs:
           ls -lh Input.ipa
 
       - name: Inject & Package IPA
+        timeout-minutes: 12
         run: |
           export PATH="$THEOS/bin:$PATH"
           DYLIB=$(find Tweak/.theos/obj -name "*.dylib" -type f | head -1)
@@ -125,8 +126,18 @@ jobs:
           mkdir -p "$APP/Frameworks"
           cp "$GITHUB_WORKSPACE/$DYLIB" "$APP/Frameworks/BadooVault.dylib"
 
-          echo "[3/5] Injecting load command..."
-          insert_dylib --strip-codesig --inplace "@executable_path/Frameworks/BadooVault.dylib" "$BIN"
+          echo "[3/5] Ensuring BadooVault load command..."
+          # If the base IPA is already tweaked (e.g. build-17 is a decrypted IPA
+          # that already ships Frameworks/BadooVault.dylib), the load command for
+          # @executable_path/Frameworks/BadooVault.dylib already exists. The `cp`
+          # above overwrites that dylib with our freshly-built one at the same
+          # path, so re-running insert_dylib would add a SECOND load command and
+          # crash/bloat the binary. Only inject when the load command is absent.
+          if otool -l "$BIN" | grep -q "BadooVault.dylib"; then
+            echo "Load command BadooVault.dylib already present — reusing it (dylib was overwritten in place)."
+          else
+            insert_dylib --strip-codesig --inplace "@executable_path/Frameworks/BadooVault.dylib" "$BIN"
+          fi
           if ! otool -l "$BIN" | grep -q "BadooVault.dylib"; then
             echo "::error::Load command not present after insert_dylib. Aborting."
             exit 1
