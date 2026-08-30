@@ -26,14 +26,24 @@ group de Badoo sans code en dur). Parité complète reprise : P1/A/B/C/R2/P3.
 
 ## En cours
 
-Aucun agent actif. **Build-20 livré** (commit `99d97e7`, run 33285456681 verte →
-release `build-20`, `BadooVault.ipa`, 81 933 997 B HTTP 200). Localisation FR/EN complète +
-toggle réduit + fix clavier carte GPS + auto-swipe autonome (audit). Voir Journal
-2026-08-30. Reste : validation appareil (humain), dont la bascule FR/EN et l'auto-swipe.
+Aucun agent actif. **Build-23 livré** (corrigé, base build-17) → release
+`build-23`, `BadooVault.ipa`, 81 934 000 B HTTP 200. Localisation FR/EN complète +
+toggle réduit 40×18 @9pt + fix clavier carte GPS + auto-swipe autonome (audit).
+Voir Journal 2026-08-30. Reste : validation appareil (humain), dont la bascule FR/EN
+et l'auto-swipe.
+
+⚠️ Base d'injection corrigée : les premiers builds livrés (`build-20`) partaient de la
+base **stock** `base-5.467.0-stock` — l'utilisateur a signalé une **ancienne version**.
+La bonne base est **build-17** (IPA Badoo 5.467.0 **décrypté**, marqueur `decrypt.day`,
+contenant déjà `Payload/Badoo.app/Frameworks/BadooVault.dylib`). Fix CI appliqué
+(commit `8fd754a`) : `insert_dylib` est **sauté** quand la load command
+`BadooVault.dylib` existe déjà (le `cp` écrase le dylib en place au même chemin), +
+`timeout-minutes: 12` sur « Inject & Package IPA » (2 runs précédents bloqués >1h sur la
+ré-injection).
 
 ## Prochaine étape
 
-**Valider build-20 sur appareil** (Sideloadly, iOS 17+) :
+**Valider build-23 sur appareil** (Sideloadly, iOS 17+) :
 0. **Toggle FR/EN** — ouvrir le panneau : la bascule compacte 40×18 doit passer toute l'UI en
    anglais puis en français à la volée ; l'override doit survivre au redémarrage ; vérifier le
    rendu à 9 pt (pas de troncature).
@@ -64,6 +74,30 @@ toggle réduit + fix clavier carte GPS + auto-swipe autonome (audit). Voir Journ
 - `BPEPushNotificationService.appex` conservée telle quelle ; re-signée par Sideloadly.
 
 ## Journal
+
+### 2026-08-30 — OpenCode — build-23 : livraison corrigée sur base build-17 (décryptée) + fix CI ré-injection
+
+Livraison finale corrigée de la localisation FR/EN + toggle 40×18 + fix clavier GPS + audit
+auto-swipe, cette fois injectée dans la **bonne base**.
+
+- **Diagnostic CI** : 2 runs (`33286137194`, `33286574079`) bloqués >1h sur l'étape
+  « Inject & Package IPA » (runner gelé, `run.updated_at` figé), alors que la base stock
+  passait en 1m46s. Cause racine : `insert_dylib` relancé sur un binaire **déjà injecté**
+  (build-17 = IPA 5.467.0 **décrypté**, marqueur `Payload/decrypt.day`, contenant déjà
+  `Payload/Badoo.app/Frameworks/BadooVault.dylib`) → **doublon de load command**.
+- **Fix appliqué** (commit `8fd754a`) dans `.github/workflows/build.yml` :
+  - « Inject & Package IPA » : ne lance `insert_dylib` **que si** `otool -l $BIN` ne référence
+    pas déjà `BadooVault.dylib`. Sur une base déjà tweakée, le `cp` écrase
+    `Frameworks/BadooVault.dylib` en place au même chemin → la load command existante charge
+    directement notre dylib neuf.
+  - `timeout-minutes: 12` ajouté sur l'étape pour qu'un éventuel blocage échoue vite au lieu
+    de staller 1h.
+- **Build vert** : run `33286830708` conclu **success en 1m54s** (commit `8fd754a`) → release
+  **`build-23`** / `BadooVault.ipa` **81 934 000 B**, **HTTP 200 vérifié**.
+- URL livrée :
+  `https://github.com/mpoukiarmel21-beep/BadooVault/releases/download/build-23/BadooVault.ipa`
+- **Note base** : build-20 (base stock) obsolète — l'utilisateur a signalé l'ancienne version.
+  La référence livrable est désormais build-23 (base build-17 décryptée).
 
 ### 2026-08-30 — OpenCode — build-20 : localisation FR/EN complète + toggle réduit 40×18 + fix clavier carte GPS + audit auto-swipe autonome
 
